@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Overview - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container">
+    <div class="row g-4">
+      <div class="col-lg-3">
+        {% include "admin/_nav.html" %}
+      </div>
+      <div class="col-lg-9">
+        <h1 class="mb-4">Overview</h1>
+        <div class="row g-4 mb-4">
+          {% set cards = [
+            (counts.total_scans, 'Total Scans', '&#128269;', 'var(--accent)'),
+            (counts.dangerous_scans, 'Dangerous', '&#9888;', 'var(--red)'),
+            (report_stats['new'], 'New Reports', '&#128276;', 'var(--yellow)'),
+            (unread_messages, 'Unread Messages', '&#128231;', 'var(--accent-2)'),
+            (counts.users, 'Users', '&#128101;', 'var(--green)')
+          ] %}
+          {% for num, label, icon, color in cards %}
+            <div class="col-md-4">
+              <div class="glass card-hover p-4">
+                <div class="fs-2 mb-2" style="color:{{ color }};">{{ icon|safe }}</div>
+                <div class="fs-3 fw-bold">{{ num }}</div>
+                <div class="text-dim-c small">{{ label }}</div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <!-- Scam report workflow stats -->
+        <div class="glass p-4 mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Scam report workflow</h5>
+            <a class="btn btn-ghost btn-sm-trust" href="{{ url_for('admin.reports') }}">Open reports &rarr;</a>
+          </div>
+          <div class="row g-3">
+            {% set report_cards = [
+              (report_stats.total, 'Total', 'var(--accent)'),
+              (report_stats['new'], 'New', 'var(--yellow)'),
+              (report_stats['under review'], 'Under Review', 'var(--accent-2)'),
+              (report_stats['resolved'], 'Resolved', 'var(--green)'),
+              (report_stats['rejected'], 'Rejected', 'var(--red)')
+            ] %}
+            {% for num, label, color in report_cards %}
+              <div class="col-6 col-md">
+                <div class="glass-soft stat-card" style="padding:1rem;">
+                  <div class="fs-3 fw-bold" style="color:{{ color }};">{{ num }}</div>
+                  <div class="stat-label">{{ label }}</div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="row g-4 mb-4">
+          <div class="col-lg-7">
+            <div class="glass p-4 h-100">
+              <h5 class="mb-3">Scan volume &mdash; last 14 days</h5>
+              <div class="chart-box"><canvas id="scanVolumeChart"></canvas></div>
+            </div>
+          </div>
+          <div class="col-lg-5">
+            <div class="glass p-4 h-100">
+              <h5 class="mb-3">Risk distribution</h5>
+              <div class="chart-box"><canvas id="riskChart"></canvas></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-4 mb-4">
+          <div class="col-lg-7">
+            <div class="glass p-4 h-100">
+              <h5 class="mb-3">Most common fraud types</h5>
+              <div class="chart-box"><canvas id="fraudTypesChart"></canvas></div>
+            </div>
+          </div>
+          <div class="col-lg-5">
+            <div class="glass p-4 h-100">
+              <h5 class="mb-3">User growth &mdash; last 14 days</h5>
+              <div class="chart-box"><canvas id="userGrowthChart"></canvas></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass p-4">
+          <h5 class="mb-3">Quick actions</h5>
+          <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('admin.reports', status='new') }}" class="btn btn-ghost btn-sm-trust">Review new reports</a>
+            <a href="{{ url_for('admin.messages') }}" class="btn btn-ghost btn-sm-trust">Read messages</a>
+            <a href="{{ url_for('admin.blacklist') }}" class="btn btn-ghost btn-sm-trust">Manage blacklist</a>
+            <a href="{{ url_for('admin.analytics') }}" class="btn btn-ghost btn-sm-trust">View analytics</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  const CHART_OPTS = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: "#9aa3c7", font: { family: "Segoe UI" } } } }
+  };
+  const gridColor = "rgba(255,255,255,0.07)";
+
+  fetch("/admin/api/analytics", { headers: { "X-Requested-With": "XMLHttpRequest" } })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      if (!data.success) return;
+
+      /* ---- Scan volume line chart ---- */
+      const volume = document.getElementById("scanVolumeChart");
+      if (volume) {
+        new Chart(volume, {
+          type: "line",
+          data: {
+            labels: data.scan_volume.map(function (d) { return d.date.slice(5); }),
+            datasets: [{
+              label: "Scans",
+              data: data.scan_volume.map(function (d) { return d.count; }),
+              borderColor: "#7c5cff",
+              backgroundColor: "rgba(124,92,255,0.18)",
+              fill: true,
+              tension: 0.35,
+              pointBackgroundColor: "#38d6ff"
+            }]
+          },
+          options: Object.assign({}, CHART_OPTS, {
+            scales: { x: { ticks: { color: "#6b74a0" }, grid: { color: gridColor } },
+                      y: { ticks: { color: "#6b74a0", precision: 0 }, grid: { color: gridColor }, beginAtZero: true } }
+          })
+        });
+      }
+
+      /* ---- Risk distribution doughnut ---- */
+      const risk = document.getElementById("riskChart");
+      if (risk) {
+        new Chart(risk, {
+          type: "doughnut",
+          data: {
+            labels: ["Safe", "Warning", "Dangerous"],
+            datasets: [{
+              data: [data.risk.safe, data.risk.warning, data.risk.dangerous],
+              backgroundColor: ["#2dd4a7", "#f5b544", "#ff5f6d"],
+              borderColor: "#0b0d1c",
+              borderWidth: 3
+            }]
+          },
+          options: CHART_OPTS
+        });
+      }
+
+      /* ---- Most common fraud types bar chart ---- */
+      const fraud = document.getElementById("fraudTypesChart");
+      if (fraud) {
+        const items = data.fraud_types.slice(0, 8);
+        new Chart(fraud, {
+          type: "bar",
+          data: {
+            labels: items.map(function (f) { return f.label; }),
+            datasets: [{
+              label: "Reports & detections",
+              data: items.map(function (f) { return f.count; }),
+              backgroundColor: "rgba(56,214,255,0.75)",
+              borderRadius: 6
+            }]
+          },
+          options: Object.assign({}, CHART_OPTS, {
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (c) { return c.parsed.y + " case(s)"; } } } },
+            scales: { x: { ticks: { color: "#9aa3c7" }, grid: { color: gridColor } },
+                      y: { ticks: { color: "#6b74a0", precision: 0 }, grid: { color: gridColor }, beginAtZero: true } }
+          })
+        });
+      }
+
+      /* ---- User growth line chart ---- */
+      const users = document.getElementById("userGrowthChart");
+      if (users) {
+        new Chart(users, {
+          type: "line",
+          data: {
+            labels: data.user_growth.map(function (d) { return d.date.slice(5); }),
+            datasets: [{
+              label: "New users",
+              data: data.user_growth.map(function (d) { return d.count; }),
+              borderColor: "#2dd4a7",
+              backgroundColor: "rgba(45,212,167,0.15)",
+              fill: true,
+              tension: 0.35,
+              pointBackgroundColor: "#2dd4a7"
+            }]
+          },
+          options: Object.assign({}, CHART_OPTS, {
+            scales: { x: { ticks: { color: "#6b74a0" }, grid: { color: gridColor } },
+                      y: { ticks: { color: "#6b74a0", precision: 0 }, grid: { color: gridColor }, beginAtZero: true } }
+          })
+        });
+      }
+    })
+    .catch(function () {
+      /* Charts are progressive enhancement - never block the admin page. */
+    });
+})();
+</script>
+{% endblock %}

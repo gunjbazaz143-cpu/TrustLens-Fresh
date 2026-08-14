@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}WhatsApp Scanner - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container" style="max-width: 880px;">
+    <div class="text-center mb-4 reveal">
+      <span class="hero-badge mb-3">&#128172; WHATSAPP SCANNER</span>
+      <h1 class="mt-3">Spot <span class="text-gradient">WhatsApp scams</span> in seconds</h1>
+      <p class="text-muted-c mx-auto" style="max-width:560px;">Upload a screenshot of a suspicious chat. Our OCR engine reads the message and matches it against known scam patterns: lottery, OTP, KYC, courier, job and investment fraud.</p>
+    </div>
+
+    <div class="glass p-4 p-lg-5 mb-4 reveal">
+      <div class="drop-zone mb-3" id="dropZone">
+        <div class="dz-icon mb-2">&#128247;</div>
+        <p class="fw-bold mb-1">Click or drag a WhatsApp screenshot here</p>
+        <p class="text-dim-c small mb-2">PNG, JPG, JPEG, GIF, WEBP or BMP &mdash; up to 16 MB</p>
+        <span class="kbd-chip dz-filename">No file chosen</span>
+        <input type="file" id="file" accept="image/*" class="d-none" />
+      </div>
+      <button type="button" id="scanBtn" class="btn btn-trust w-100">Scan Screenshot</button>
+      <div class="form-text text-dim-c mt-2">First scan on a device loads the OCR engine and can take a few seconds longer.</div>
+    </div>
+
+    <div id="resultBox" class="result-hidden"></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("scanBtn").addEventListener("click", function () {
+  const btn = this;
+  const file = document.getElementById("file").files[0];
+  if (!file) {
+    TrustLens.showError(document.getElementById("resultBox"), "Please choose a screenshot first.");
+    return;
+  }
+  const fd = new FormData();
+  fd.append("screenshot", file);
+  TrustLens.loading(btn, "Running OCR...");
+  TrustLens.apiPost("/api/scan-whatsapp", fd, true)
+    .then(function (data) { renderResult(data); })
+    .catch(function (err) { TrustLens.showError(document.getElementById("resultBox"), err.message); })
+    .finally(function () { TrustLens.doneLoading(btn); });
+});
+
+function renderResult(data) {
+  const box = document.getElementById("resultBox");
+  box.classList.remove("result-hidden");
+  box.classList.add("glass", "p-4", "p-lg-5", "result-box");
+  box.innerHTML =
+    '<div class="row g-4 align-items-center">' +
+      '<div class="col-md-4 text-center">' +
+        '<div class="gauge-wrap" id="gauge"></div>' +
+        '<div class="mt-3" id="statusPill"></div>' +
+        '<div class="mt-2 small text-dim-c" id="scamType"></div>' +
+      '</div>' +
+      '<div class="col-md-8">' +
+        '<h5 class="mb-3">Message analysis</h5>' +
+        '<div class="fw-bold small text-uppercase text-dim-c mb-2">Extracted text</div>' +
+        '<div class="glass-soft p-3 mb-3" style="max-height:180px;overflow:auto;font-size:.85rem;">' +
+          (data.extracted_text ? __escapeHtml(data.extracted_text) : "<em class='text-dim-c'>No text extracted</em>") +
+        "</div>" +
+        '<div class="fw-bold small text-uppercase text-dim-c mb-2">Why this score</div>' +
+        '<ul class="reason-list" id="reasons"></ul>' +
+        '<p class="text-dim-c small mt-3 mb-0">Processing time: ' + data.processing_time_ms + ' ms</p>' +
+      '</div>' +
+    '</div>';
+  TrustLens.renderGauge(document.getElementById("gauge"), data.score);
+  document.getElementById("statusPill").innerHTML = TrustLens.renderStatusPill(data.status);
+  if (data.scam_type) {
+    document.getElementById("scamType").innerHTML = "Detected pattern: <strong>" + __escapeHtml(data.scam_type) + "</strong>";
+  }
+  TrustLens.renderReasons(document.getElementById("reasons"), data.reasons);
+  TrustLens.showResult(box, data);
+}
+</script>
+{% endblock %}

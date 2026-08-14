@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics - Admin - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container">
+    <div class="row g-4">
+      <div class="col-lg-3">
+        {% include "admin/_nav.html" %}
+      </div>
+      <div class="col-lg-9">
+        <h1 class="mb-4">Analytics</h1>
+        <div class="row g-4 mb-4">
+          {% set items = [
+            (counts.total_scans, 'Total Scans', 'var(--accent)'),
+            (counts.dangerous_scans, 'Dangerous', 'var(--red)'),
+            (counts.safe_scans, 'Safe', 'var(--green)'),
+            (counts.scam_reports, 'Scam Reports', 'var(--yellow)'),
+            (counts.users, 'Users', 'var(--green)')
+          ] %}
+          {% for num, label, color in items %}
+            <div class="col-md-4">
+              <div class="glass-soft stat-card">
+                <div class="stat-num" style="-webkit-text-fill-color:{{ color }};background:none;color:{{ color }};" data-count="{{ num }}">0</div>
+                <div class="stat-label">{{ label }}</div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="row g-4 mb-4">
+          <div class="col-lg-7">
+            <div class="glass p-4 h-100">
+              <h5 class="mb-3">Most common fraud types</h5>
+              <div class="chart-box"><canvas id="fraudTypesChart"></canvas></div>
+            </div>
+          </div>
+          <div class="col-lg-5">
+            <div class="glass p-4 h-100">
+              <h5 class="mb-3">Ranking</h5>
+              {% if fraud_types %}
+                <ol class="list-unstyled mb-0">
+                  {% for label, count in fraud_types[:10] %}
+                    <li class="d-flex align-items-center justify-content-between py-2" style="border-bottom:1px solid var(--border-soft);">
+                      <span class="d-flex align-items-center gap-2 small">
+                        <span class="kbd-chip" style="min-width:26px;text-align:center;">{{ loop.index }}</span>
+                        {{ label }}
+                      </span>
+                      <span class="fw-bold" style="color:var(--accent-2);">{{ count }}</span>
+                    </li>
+                  {% endfor %}
+                </ol>
+              {% else %}
+                <p class="text-dim-c small mb-0">No fraud data recorded yet.</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-4">
+          <div class="col-lg-6">
+            <div class="glass p-4 h-100">
+              <h5 class="mb-3">Scan volume by type</h5>
+              <div class="chart-box"><canvas id="volumeChart"></canvas></div>
+              <p class="text-dim-c small mt-3 mb-0">Live counts across all six scanners.</p>
+            </div>
+          </div>
+          <div class="col-lg-6">
+            <div class="glass p-4 h-100">
+              <h5 class="mb-3">Risk distribution</h5>
+              <div class="chart-box"><canvas id="riskChart"></canvas></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  const CHART_OPTS = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: "#9aa3c7", font: { family: "Segoe UI" } } } }
+  };
+  const gridColor = "rgba(255,255,255,0.07)";
+
+  fetch("/admin/api/analytics", { headers: { "X-Requested-With": "XMLHttpRequest" } })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      if (!data.success) return;
+
+      /* ---- Fraud types bar chart ---- */
+      const fraud = document.getElementById("fraudTypesChart");
+      if (fraud && data.fraud_types.length) {
+        const items = data.fraud_types.slice(0, 10);
+        new Chart(fraud, {
+          type: "bar",
+          data: {
+            labels: items.map(function (f) { return f.label; }),
+            datasets: [{
+              label: "Cases",
+              data: items.map(function (f) { return f.count; }),
+              backgroundColor: items.map(function (_, i) {
+                return ["#7c5cff", "#38d6ff", "#ff5f6d", "#f5b544", "#2dd4a7"][i % 5];
+              }),
+              borderRadius: 6
+            }]
+          },
+          options: Object.assign({}, CHART_OPTS, {
+            plugins: { legend: { display: false } },
+            scales: { x: { ticks: { color: "#9aa3c7" }, grid: { color: gridColor } },
+                      y: { ticks: { color: "#6b74a0", precision: 0 }, grid: { color: gridColor }, beginAtZero: true } }
+          })
+        });
+      } else if (fraud) {
+        fraud.parentElement.insertAdjacentHTML("beforeend", '<p class="text-dim-c small">No fraud data recorded yet.</p>');
+      }
+
+      /* ---- Scan volume by category ---- */
+      const volume = document.getElementById("volumeChart");
+      if (volume) {
+        new Chart(volume, {
+          type: "bar",
+          data: {
+            labels: data.categories.map(function (c) { return c.label; }),
+            datasets: [{
+              label: "Scans",
+              data: data.categories.map(function (c) { return c.count; }),
+              backgroundColor: "rgba(124,92,255,0.75)",
+              borderRadius: 6
+            }]
+          },
+          options: Object.assign({}, CHART_OPTS, {
+            plugins: { legend: { display: false } },
+            scales: { x: { ticks: { color: "#9aa3c7" }, grid: { color: gridColor } },
+                      y: { ticks: { color: "#6b74a0", precision: 0 }, grid: { color: gridColor }, beginAtZero: true } }
+          })
+        });
+      }
+
+      /* ---- Risk distribution doughnut ---- */
+      const risk = document.getElementById("riskChart");
+      if (risk) {
+        new Chart(risk, {
+          type: "doughnut",
+          data: {
+            labels: ["Safe", "Warning", "Dangerous"],
+            datasets: [{
+              data: [data.risk.safe, data.risk.warning, data.risk.dangerous],
+              backgroundColor: ["#2dd4a7", "#f5b544", "#ff5f6d"],
+              borderColor: "#0b0d1c",
+              borderWidth: 3
+            }]
+          },
+          options: CHART_OPTS
+        });
+      }
+    })
+    .catch(function () { /* Charts are progressive enhancement. */ });
+})();
+</script>
+{% endblock %}

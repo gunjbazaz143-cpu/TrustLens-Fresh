@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if product else 'Add' }} Product - Admin - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container" style="max-width: 960px;">
+    <div class="row g-4">
+      <div class="col-lg-3">
+        {% include "admin/_nav.html" %}
+      </div>
+      <div class="col-lg-9">
+        <div class="d-flex align-items-center gap-2 mb-4">
+          <a class="btn btn-ghost btn-sm-trust" href="{{ url_for('admin.products') }}">&larr; Products</a>
+          <h1 class="mb-0">{{ 'Edit' if product else 'Add' }} Product</h1>
+        </div>
+
+        <div class="glass p-4 p-lg-5">
+          <form method="post" action="{{ url_for('admin.product_edit', product_id=product.product_id) if product else url_for('admin.product_new') }}">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label-c" for="brand_name">Brand name *</label>
+                <input type="text" class="form-control form-control-trust" id="brand_name" name="brand_name"
+                       value="{{ product.brand_name if product else '' }}" required>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label-c" for="product_name">Product name *</label>
+                <input type="text" class="form-control form-control-trust" id="product_name" name="product_name"
+                       value="{{ product.product_name if product else '' }}" required>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label-c" for="product_variant">Variant</label>
+                <input type="text" class="form-control form-control-trust" id="product_variant" name="product_variant"
+                       placeholder="e.g. Liquid, 100ml" value="{{ product.product_variant or '' if product else '' }}">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label-c" for="category">Category</label>
+                <input type="text" class="form-control form-control-trust" id="category" name="category"
+                       placeholder="e.g. Household &amp; Personal Care" value="{{ product.category or '' if product else '' }}">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label-c" for="subcategory">Subcategory</label>
+                <input type="text" class="form-control form-control-trust" id="subcategory" name="subcategory"
+                       value="{{ product.subcategory or '' if product else '' }}">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label-c" for="consumption_status">Consumption status</label>
+                <select class="form-select form-control-trust" id="consumption_status" name="consumption_status">
+                  <option value="">Unknown</option>
+                  {% for opt in consumption_options %}
+                    <option value="{{ opt }}" {% if product and product.consumption_status == opt %}selected{% endif %}>{{ opt }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label-c" for="manufacturer">Manufacturer</label>
+                <input type="text" class="form-control form-control-trust" id="manufacturer" name="manufacturer"
+                       value="{{ product.manufacturer or '' if product else '' }}">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label-c" for="market">Market</label>
+                <input type="text" class="form-control form-control-trust" id="market" name="market"
+                       placeholder="e.g. India" value="{{ product.market or '' if product else '' }}">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label-c" for="barcode">Barcode (GTIN/EAN)</label>
+                <input type="text" class="form-control form-control-trust" id="barcode" name="barcode"
+                       value="{{ product.barcode or '' if product else '' }}">
+              </div>
+              <div class="col-12">
+                <label class="form-label-c" for="intended_use">Intended use</label>
+                <textarea class="form-control form-control-trust" id="intended_use" name="intended_use" rows="2">{{ product.intended_use or '' if product else '' }}</textarea>
+              </div>
+              <div class="col-12">
+                <label class="form-label-c" for="warnings">Warnings (one per line)</label>
+                <textarea class="form-control form-control-trust" id="warnings" name="warnings" rows="3" placeholder="For external use only - not for internal use">{{ warnings_text or '' }}</textarea>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label-c" for="source">Source</label>
+                <input type="text" class="form-control form-control-trust" id="source" name="source"
+                       value="{{ product.source or '' if product else '' }}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label-c" for="source_url">Source URL</label>
+                <input type="url" class="form-control form-control-trust" id="source_url" name="source_url"
+                       value="{{ product.source_url or '' if product else '' }}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label-c" for="source_date">Source date</label>
+                <input type="text" class="form-control form-control-trust" id="source_date" name="source_date"
+                       placeholder="e.g. 2026-08" value="{{ product.source_date or '' if product else '' }}">
+              </div>
+              <div class="col-12">
+                <label class="form-label-c" for="ingredients">Ingredients (one per line: <code>Name | concentration | unit | role</code>)</label>
+                <textarea class="form-control form-control-trust" id="ingredients" name="ingredients" rows="6"
+                          placeholder="Chloroxylenol | 4.8 | w/w | active&#10;Water | | | solvent">{{ current_ingredients or '' }}</textarea>
+                <div class="form-text">Concentration is optional and must be a number; leave blank when the concentration is not published. The ingredient name must already exist in the <a href="{{ url_for('admin.ingredients') }}" class="link-dim">ingredient database</a>.</div>
+              </div>
+              <div class="col-12 d-flex gap-2">
+                <button type="submit" class="btn btn-trust flex-fill">{{ 'Save Changes' if product else 'Add Product' }}</button>
+                <a class="btn btn-ghost" href="{{ url_for('admin.products') }}">Cancel</a>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,7 @@
+{% macro status_pill(status) -%}
+  {% if status == 'new' %}<span class="status-pill badge-warning">NEW</span>
+  {% elif status == 'under review' %}<span class="status-pill badge-info">UNDER REVIEW</span>
+  {% elif status == 'resolved' %}<span class="status-pill badge-safe">RESOLVED</span>
+  {% elif status == 'rejected' %}<span class="status-pill badge-dangerous">REJECTED</span>
+  {% else %}<span class="status-pill badge-warning">{{ status|upper }}</span>{% endif %}
+{%- endmacro %}

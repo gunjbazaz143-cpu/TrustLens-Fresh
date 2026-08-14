@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}QR Scanner - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container" style="max-width: 900px;">
+    <div class="text-center mb-4 reveal">
+      <span class="hero-badge mb-3">&#128241; QR SCANNER</span>
+      <h1 class="mt-3">Decode a QR &amp; <span class="text-gradient">verify what it really does</span></h1>
+      <p class="text-muted-c mx-auto" style="max-width:580px;">QR codes can hide phishing links, and payment QRs can be tampered with. We decode the payload, validate UPI payment details, or run the destination URL through HTTPS, SSL, domain-age and threat-intelligence checks &mdash; then show you the evidence.</p>
+    </div>
+
+    <div class="glass p-4 p-lg-5 mb-4 reveal">
+      <div class="drop-zone mb-3" id="dropZone">
+        <div class="dz-icon mb-2">&#128247;</div>
+        <p class="fw-bold mb-1">Click or drag a QR code image here</p>
+        <p class="text-dim-c small mb-2">PNG, JPG, JPEG, GIF, WEBP or BMP &mdash; up to 16 MB</p>
+        <span class="kbd-chip dz-filename">No file chosen</span>
+        <input type="file" id="file" accept="image/*" class="d-none" />
+      </div>
+      <button type="button" id="scanBtn" class="btn btn-trust w-100">Decode &amp; Verify QR</button>
+      <div class="form-text text-dim-c mt-2">For best results use a clear, front-on photo of the QR code.</div>
+    </div>
+
+    <div id="resultBox" class="result-hidden"></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("scanBtn").addEventListener("click", function () {
+  const btn = this;
+  const file = document.getElementById("file").files[0];
+  if (!file) {
+    TrustLens.showError(document.getElementById("resultBox"), "Please choose a QR code image first.");
+    return;
+  }
+  const fd = new FormData();
+  fd.append("image", file);
+  TrustLens.loading(btn, "Decoding & verifying QR...");
+  TrustLens.apiPost("/api/scan-qr", fd, true)
+    .then(function (data) { renderResult(data); })
+    .catch(function (err) { TrustLens.showError(document.getElementById("resultBox"), err.message); })
+    .finally(function () { TrustLens.doneLoading(btn); });
+});
+
+/* ---- report renderers --------------------------------------------------- */
+
+function kv(label, value, isHtml) {
+  let v;
+  if (value === null || value === undefined || value === "") {
+    v = "<em class='text-dim-c'>Not provided</em>";
+  } else if (isHtml) {
+    v = String(value);
+  } else {
+    v = __escapeHtml(String(value));
+  }
+  return (
+    '<div class="d-flex justify-content-between align-items-center py-2" style="border-bottom:1px solid var(--border);">' +
+      '<span class="text-dim-c small" style="flex-shrink:0;">' + __escapeHtml(label) + "</span>" +
+      '<span class="text-end fw-semibold" style="overflow-wrap:anywhere;padding-left:16px;">' + v + "</span>" +
+    "</div>"
+  );
+}
+
+function validationPill(data) {
+  const map = {
+    valid: ["badge-safe", "VALID"],
+    incomplete: ["badge-warning", "INCOMPLETE"],
+    invalid: ["badge-dangerous", "INVALID"]
+  };
+  const pair = map[data.validation_status] || ["badge-warning", (data.validation_status || "unknown").toUpperCase()];
+  return '<span class="status-pill ' + pair[0] + '">' + pair[1] + "</span>";
+}
+
+function renderVerdict(data) {
+  if (data.qr_type === "upi") {
+    const cls = data.verdict === "Valid UPI QR" ? "badge-safe" : "badge-dangerous";
+    return (
+      '<span class="status-pill ' + cls + '">' + __escapeHtml((data.verdict || "").toUpperCase()) + "</span> " +
+      validationPill(data)
+    );
+  }
+  const cls = data.status === "safe" ? "badge-safe" : data.status === "warning" ? "badge-warning" : "badge-dangerous";
+  return '<span class="status-pill ' + cls + '">' + __escapeHtml((data.verdict || "Result").toUpperCase()) + "</span>";
+}
+
+function qrTypeLabel(data) {
+  if (data.qr_type === "upi") return "UPI Payment QR";
+  if (data.qr_type === "website") return "Website Link QR";
+  if (data.qr_type === "none") return "No QR Detected";
+  return "Other Content";
+}
+
+function upiCard(data) {
+  const u = data.upi || {};
+  const amt = u.am ? (u.cu || "INR") + " " + u.am : null;
+  return (
+    '<div class="glass-soft p-3 p-lg-4 mb-3">' +
+      '<div class="fw-bold text-uppercase small text-dim-c mb-2" style="letter-spacing:.08em;">&#128176; UPI Payment Details</div>' +
+      kv("QR Type", qrTypeLabel(data)) +
+      kv("UPI ID", u.pa) +
+      kv("Account / Payee Name", u.pn) +
+      kv("Amount", amt) +
+      kv("Currency", u.cu || "INR (assumed)") +
+      kv("Transaction Note", u.tn) +
+      kv("PSP Handle", u.psp) +
+      kv("PSP Recognised", u.psp_known === true ? "Yes - known payment provider" : (u.psp ? "No - not on recognised list" : null)) +
+      kv("Validation Status", validationPill(data), true) +
+    "</div>"
+  );
+}
+
+function ageText(evidence) {
+  const age = evidence && evidence.domain_age;
+  if (!age) return null;
+  if (age.age_days === null || age.age_days === undefined) return "Unavailable (RDAP lookup failed)";
+  const days = age.age_days;
+  if (days < 90) return "~" + days + " days (very recent)";
+  if (days < 365) return "~" + days + " days (under a year)";
+  return "~" + (days / 365).toFixed(1) + " years";
+}
+
+function safeBrowsingText(evidence) {
+  const sb = evidence && evidence.safe_browsing;
+  if (!sb || !sb.checked) return sb && sb.reason === "API key not configured" ? "Not configured" : "Skipped";
+  if (sb.matched) return "FLAGGED: " + (sb.threats || []).join(", ");
+  return "No known threats";
+}
+
+function virusTotalText(evidence) {
+  const vt = evidence && evidence.virustotal;
+  if (!vt || !vt.checked) return vt && vt.reason === "API key not configured" ? "Not configured" : "Skipped";
+  if (vt.malicious > 0) return vt.malicious + " malicious / " + vt.suspicious + " suspicious";
+  if (vt.suspicious > 0) return vt.suspicious + " suspicious (0 malicious)";
+  return "No malicious or suspicious detections";
+}
+
+function websiteCard(data) {
+  const w = data.website || {};
+  const ev = data.evidence || {};
+  const kws = (w.suspicious_keywords || []).join(", ");
+  return (
+    '<div class="glass-soft p-3 p-lg-4 mb-3">' +
+      '<div class="fw-bold text-uppercase small text-dim-c mb-2" style="letter-spacing:.08em;">&#128279; Website Link Verification</div>' +
+      kv("QR Type", qrTypeLabel(data)) +
+      kv("Destination URL", data.decoded_url) +
+      kv("Host / Domain", w.host) +
+      kv("HTTPS", w.https === true ? "Active - connection is encrypted" : (w.https === false ? "Not secure - no HTTPS" : "Unknown")) +
+      kv("SSL Certificate", w.ssl === true ? "Valid" : (w.cert || "Unknown")) +
+      kv("Domain Age", ageText(ev)) +
+      kv("Redirects", w.redirect_count !== undefined ? w.redirect_count + " hop(s)" : null) +
+      kv("Suspicious Keywords", kws || null) +
+      kv("Blacklist Match", w.blacklisted ? "Yes - matches a known threat record" : "No") +
+      kv("Google Safe Browsing", safeBrowsingText(ev)) +
+      kv("VirusTotal", virusTotalText(ev)) +
+    "</div>"
+  );
+}
+
+function otherCard(data) {
+  return (
+    '<div class="glass-soft p-3 p-lg-4 mb-3">' +
+      '<div class="fw-bold text-uppercase small text-dim-c mb-2" style="letter-spacing:.08em;">&#128241; Decoded Payload</div>' +
+      kv("QR Type", qrTypeLabel(data)) +
+      kv("Decoded Content", data.decoded_url) +
+      (data.decoded_url_normalised ? kv("Verified As", data.decoded_url_normalised) : "") +
+    "</div>"
+  );
+}
+
+function renderResult(data) {
+  const box = document.getElementById("resultBox");
+  box.classList.remove("result-hidden");
+  box.classList.add("glass", "p-4", "p-lg-5", "result-box");
+  box.innerHTML = "";
+  TrustLens.renderBlacklistBanner(
+    box,
+    data.blacklisted || (data.website && data.website.blacklisted),
+    data.blacklist_reason
+  );
+
+  box.insertAdjacentHTML(
+    "beforeend",
+    '<div class="row g-4 align-items-center mb-4">' +
+      '<div class="col-md-4 text-center">' +
+        '<div class="gauge-wrap" id="gauge"></div>' +
+        '<div class="mt-3" id="statusPill"></div>' +
+      "</div>" +
+      '<div class="col-md-8">' +
+        '<h5 class="mb-1">QR Verification Report</h5>' +
+        '<div class="mb-3" id="verdictBadge"></div>' +
+        '<div class="small text-dim-c">Confidence score reflects how strongly the evidence supports this verdict.</div>' +
+      "</div>" +
+    "</div>"
+  );
+  TrustLens.renderGauge(document.getElementById("gauge"), data.score);
+  document.getElementById("statusPill").innerHTML = TrustLens.renderStatusPill(data.status);
+  document.getElementById("verdictBadge").innerHTML = renderVerdict(data);
+
+  if (data.qr_type === "upi") box.insertAdjacentHTML("beforeend", upiCard(data));
+  else if (data.qr_type === "website") box.insertAdjacentHTML("beforeend", websiteCard(data));
+  else box.insertAdjacentHTML("beforeend", otherCard(data));
+
+  box.insertAdjacentHTML(
+    "beforeend",
+    '<div class="fw-bold small text-uppercase text-dim-c mb-2" style="letter-spacing:.08em;">Why this verdict</div>' +
+      '<ul class="reason-list" id="reasons"></ul>' +
+      '<p class="text-dim-c small mt-3 mb-0">Processing time: ' + data.processing_time_ms + " ms" +
+        (data.decode && data.decode.decoder
+          ? " &middot; Decoded via " + __escapeHtml(data.decode.decoder) + " (" + __escapeHtml(data.decode.preprocess || "original") + ")"
+          : "") +
+        "</p>"
+  );
+  TrustLens.renderReasons(document.getElementById("reasons"), data.reasons);
+  TrustLens.showResult(box, data);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block title %}Website Scanner - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container" style="max-width: 920px;">
+    <div class="text-center mb-4 reveal">
+      <span class="hero-badge mb-3">&#128270; WEBSITE SCANNER</span>
+      <h1 class="mt-3">Check any <span class="text-gradient">URL</span></h1>
+      <p class="text-muted-c mx-auto" style="max-width:600px;">We run 31 independent checks &mdash; HTTPS, SSL certificates, security headers, domain age, WHOIS, blacklists, reputation services, hidden iframes, obfuscated JavaScript, login forms, redirect chains, content quality and more &mdash; then explain every point awarded and deducted.</p>
+    </div>
+
+    <div class="glass p-4 p-lg-5 mb-4 reveal">
+      <form id="scanForm">
+        <label class="form-label-c" for="url">Website address</label>
+        <div class="d-flex flex-column flex-sm-row gap-2">
+          <input type="url" class="form-control form-control-trust" id="url" name="url" placeholder="https://example.com" required>
+          <button type="submit" class="btn btn-trust flex-shrink-0">Scan Website</button>
+        </div>
+        <div class="form-text text-dim-c mt-2">Tip: run scans on links you received in emails, SMS or messages before opening them.</div>
+      </form>
+    </div>
+
+    <div id="resultBox" class="result-hidden"></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .chk-table { width: 100%; border-collapse: collapse; }
+  .chk-table td { padding: 0.55rem 0.4rem; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+  .chk-ico { width: 26px; text-align: center; font-weight: 700; font-size: 0.95rem; }
+  .chk-ico.pass { color: var(--green); }
+  .chk-ico.fail { color: var(--red); }
+  .chk-ico.info { color: var(--accent-2); }
+  .chk-name { font-weight: 600; white-space: nowrap; color: var(--text-main); }
+  .chk-pts { white-space: nowrap; font-weight: 700; text-align: right; width: 74px; }
+  .chk-pts.neg { color: var(--red); }
+  .chk-pts.zero { color: var(--text-dim); }
+  .chk-detail { color: var(--text-dim); font-size: 0.82rem; margin-top: 0.1rem; }
+  .sum-chip { display: inline-block; padding: 0.3rem 0.8rem; border-radius: 999px;
+    font-size: 0.78rem; font-weight: 700; margin: 0 0.4rem 0.4rem 0; letter-spacing: 0.04em; }
+  .sum-chip.pass { background: rgba(45, 212, 167, 0.14); color: var(--green); }
+  .sum-chip.fail { background: rgba(255, 95, 109, 0.14); color: var(--red); }
+  .sum-chip.info { background: rgba(56, 214, 255, 0.14); color: var(--accent-2); }
+</style>
+<script>
+document.getElementById("scanForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const btn = this.querySelector("button[type=submit]");
+  const url = document.getElementById("url").value.trim();
+  if (!url) return;
+  TrustLens.loading(btn, "Scanning URL...");
+  TrustLens.apiPost("/api/scan-website", { url: url })
+    .then(function (data) { renderResult(data); })
+    .catch(function (err) { TrustLens.showError(document.getElementById("resultBox"), err.message); })
+    .finally(function () { TrustLens.doneLoading(btn); });
+});
+
+function icon(status) {
+  if (status === "passed") return { sym: "&#10003;", cls: "pass", label: "Passed" };
+  if (status === "failed") return { sym: "&#10007;", cls: "fail", label: "Failed" };
+  return { sym: "&#9432;", cls: "info", label: "Note" };
+}
+
+function renderChecks(checks) {
+  if (!checks || !checks.length) return "";
+  var rows = checks.map(function (c) {
+    var ic = icon(c.status);
+    var pts = "";
+    if ((c.deduction || 0) < 0) {
+      pts = '<span class="chk-pts neg">-' + Math.abs(c.deduction) + '</span>';
+    } else if ((c.award || 0) > 0) {
+      pts = '<span class="chk-pts" style="color:var(--green)">+' + c.award + '</span>';
+    } else {
+      pts = '<span class="chk-pts zero">0</span>';
+    }
+    var detail = c.detail
+      ? '<div class="chk-detail">' + __escapeHtml(c.detail) + "</div>"
+      : "";
+    return (
+      '<tr>' +
+      '<td class="chk-ico ' + ic.cls + '">' + ic.sym + '</td>' +
+      '<td class="chk-name">' + __escapeHtml(c.name) + '</td>' +
+      '<td style="width:70px;color:var(--text-dim);font-size:0.8rem;white-space:nowrap;">' + ic.label + '</td>' +
+      pts +
+      '<td style="color:var(--text-dim);font-size:0.88rem;">' + __escapeHtml(c.text) + detail + "</td>" +
+      "</tr>"
+    );
+  }).join("");
+  return (
+    '<div class="fw-bold small text-uppercase text-dim-c mt-4 mb-2">Check-by-check analysis</div>' +
+    '<div class="table-trust" style="overflow-x:auto;"><table class="chk-table">' +
+    "<tbody>" + rows + "</tbody></table></div>"
+  );
+}
+
+function renderResult(data) {
+  const box = document.getElementById("resultBox");
+  box.classList.remove("result-hidden");
+  box.classList.add("glass", "p-4", "p-lg-5", "result-box");
+  TrustLens.renderBlacklistBanner(
+    box,
+    data.blacklisted || (data.details && data.details.blacklisted),
+    data.blacklist_reason
+  );
+  var summary = data.summary || {};
+  var detailRows = [];
+  if (data.details && data.details.url) detailRows.push("Final URL: " + __escapeHtml(data.details.url));
+  if (data.details && data.details.redirect_count) detailRows.push("Redirect hops: " + data.details.redirect_count);
+  if (data.details && data.details.domain_age_days) detailRows.push("Domain age: " + data.details.domain_age_days + " days");
+  if (data.details && data.details.registrar) detailRows.push("Registrar: " + __escapeHtml(data.details.registrar));
+  var secHdr = data.details && data.details.security_headers;
+  if (secHdr && secHdr.length) {
+    detailRows.push("Security headers: " + secHdr.map(function (h) { return __escapeHtml(h); }).join(", "));
+  } else if (secHdr) {
+    detailRows.push("Security headers: none detected");
+  }
+
+  box.insertAdjacentHTML(
+    "beforeend",
+    '<div class="row g-4 align-items-center">' +
+      '<div class="col-md-4 text-center">' +
+        '<div class="gauge-wrap" id="gauge"></div>' +
+        '<div class="mt-3" id="statusPill"></div>' +
+        '<div class="mt-2 fw-bold" style="color:var(--text-main)">' + __escapeHtml(data.risk_level || "") + '</div>' +
+      '</div>' +
+      '<div class="col-md-8">' +
+        '<h5>Analysis of <span class="text-gradient">' + __escapeHtml(data.details && data.details.url || "") + "</span></h5>" +
+        '<div class="mb-2">' +
+          '<span class="sum-chip pass">' + (summary.passed || 0) + ' passed</span>' +
+          '<span class="sum-chip fail">' + (summary.failed || 0) + ' failed</span>' +
+          '<span class="sum-chip info">' + (summary.info || 0) + ' notes</span>' +
+          '<span class="sum-chip fail">-' + (summary.points_deducted || 0) + ' points deducted</span>' +
+        '</div>' +
+        '<div class="text-dim-c small">' + detailRows.join(" &middot; ") + "</div>" +
+        renderChecks(data.checks) +
+        '<p class="text-dim-c small mt-3 mb-0">Processing time: ' + data.processing_time_ms + ' ms</p>' +
+      '</div>' +
+    '</div>'
+  );
+  TrustLens.renderGauge(document.getElementById("gauge"), data.score);
+  document.getElementById("statusPill").innerHTML = TrustLens.renderStatusPill(data.status);
+  TrustLens.showResult(box, data);
+}
+</script>
+{% endblock %}

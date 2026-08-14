@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Email Scanner - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container" style="max-width: 880px;">
+    <div class="text-center mb-4 reveal">
+      <span class="hero-badge mb-3">&#128231; EMAIL SCANNER</span>
+      <h1 class="mt-3">Is that email a <span class="text-gradient">phish?</span></h1>
+      <p class="text-muted-c mx-auto" style="max-width:560px;">Paste suspicious email content. We scan for fake senders, phishing links, urgency tactics, payment requests and mass-mail patterns.</p>
+    </div>
+
+    <div class="glass p-4 p-lg-5 mb-4 reveal">
+      <form id="scanForm">
+        <label class="form-label-c" for="content">Email content</label>
+        <textarea class="form-control form-control-trust" id="content" name="content" rows="8" placeholder="Paste the full email text here..." required></textarea>
+        <div class="form-text text-dim-c mt-2">Remove personal details if you like &mdash; the scanner only needs the wording and links.</div>
+        <button type="submit" class="btn btn-trust mt-3 w-100">Scan Email</button>
+      </form>
+    </div>
+
+    <div id="resultBox" class="result-hidden"></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("scanForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const btn = this.querySelector("button[type=submit]");
+  const content = document.getElementById("content").value.trim();
+  if (!content) return;
+  TrustLens.loading(btn, "Analysing email...");
+  TrustLens.apiPost("/api/scan-email", { content: content })
+    .then(function (data) { renderResult(data); })
+    .catch(function (err) { TrustLens.showError(document.getElementById("resultBox"), err.message); })
+    .finally(function () { TrustLens.doneLoading(btn); });
+});
+
+function renderResult(data) {
+  const box = document.getElementById("resultBox");
+  box.classList.remove("result-hidden");
+  box.classList.add("glass", "p-4", "p-lg-5", "result-box");
+
+  const label = data.risk_label || String(data.status || "").toUpperCase();
+  const labelClass = data.status === "safe" ? "text-success"
+    : data.status === "warning" ? "text-warning" : "text-danger";
+  const indicators = data.indicators || [];
+
+  box.innerHTML =
+    '<div class="row g-4 align-items-center">' +
+      '<div class="col-md-4 text-center">' +
+        '<div class="gauge-wrap" id="gauge"></div>' +
+        '<div class="mt-3" id="statusPill"></div>' +
+      '</div>' +
+      '<div class="col-md-8">' +
+        '<h5 class="mb-2">' + (data.risk_emoji || "&#128231;") +
+          ' <span class="' + labelClass + '">' + window.__escapeHtml(label) + '</span></h5>' +
+        '<div id="indicatorChips" class="mb-3"></div>' +
+        '<p class="rec-box ' + (data.status === "safe" ? "rec-safe" : data.status === "warning" ? "rec-warning" : "rec-dangerous") + '" id="recommendation"></p>' +
+        '<div class="fw-bold small text-uppercase text-dim-c mb-2">Why this score</div>' +
+        '<ul class="reason-list" id="reasons"></ul>' +
+        '<p class="text-dim-c small mt-3 mb-0">Confidence: ' + (data.confidence !== undefined ? data.confidence + '%' : 'n/a') + ' &middot; Processing time: ' + data.processing_time_ms + ' ms</p>' +
+      '</div>' +
+    '</div>';
+
+  TrustLens.renderRiskGauge(document.getElementById("gauge"), data.score, "RISK SCORE");
+  document.getElementById("statusPill").innerHTML = TrustLens.renderRiskPill(data.status, label, data.risk_emoji);
+
+  const rec = document.getElementById("recommendation");
+  if (data.recommendation) {
+    rec.textContent = "Recommendation: " + data.recommendation;
+  } else {
+    rec.remove();
+  }
+
+  const chips = document.getElementById("indicatorChips");
+  if (indicators.length) {
+    chips.innerHTML = '<div class="fw-bold small text-uppercase text-dim-c mb-2">Detected indicators</div>';
+    indicators.forEach(function (i) {
+      const chip = document.createElement("span");
+      chip.className = "detail-chip";
+      chip.textContent = i;
+      chips.appendChild(chip);
+    });
+  } else {
+    chips.remove();
+  }
+
+  TrustLens.renderReasons(document.getElementById("reasons"), data.reasons);
+  TrustLens.showResult(box, data);
+}
+</script>
+{% endblock %}

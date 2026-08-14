@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+instance/*.sqlite
+instance/*.db
+
+# Database (regenerated on boot)
+database/*.db
+database/*.sqlite
+
+# Uploads & reports
+static/uploads/*
+!static/uploads/.gitkeep
+uploads/*
+!uploads/.gitkeep
+reports/*.pdf
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

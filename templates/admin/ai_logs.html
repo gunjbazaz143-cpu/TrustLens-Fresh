@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}AI Logs - Admin - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container">
+    <div class="row g-4">
+      <div class="col-lg-3">
+        {% include "admin/_nav.html" %}
+      </div>
+      <div class="col-lg-9">
+        <h1 class="mb-4">AI Scan Logs <span class="text-dim-c fs-5">(latest 200)</span></h1>
+        <div class="glass p-4">
+          <div class="table-responsive">
+            <table class="table table-trust mb-0">
+              <thead>
+                <tr><th>ID</th><th>Type</th><th>Score</th><th>Status</th><th>Time (ms)</th><th>When</th></tr>
+              </thead>
+              <tbody>
+                {% for log in logs %}
+                  <tr>
+                    <td class="text-dim-c">{{ log.id }}</td>
+                    <td><span class="kbd-chip">{{ log.scan_type }}</span></td>
+                    <td class="fw-bold">{{ log.score }}</td>
+                    <td>
+                      {% if log.status == 'safe' %}<span class="status-pill badge-safe" style="font-size:.72rem;">SAFE</span>
+                      {% elif log.status == 'warning' %}<span class="status-pill badge-warning" style="font-size:.72rem;">WARNING</span>
+                      {% else %}<span class="status-pill badge-dangerous" style="font-size:.72rem;">DANGEROUS</span>{% endif %}
+                    </td>
+                    <td class="text-dim-c small">{{ log.processing_time_ms }}</td>
+                    <td class="text-dim-c small">{{ log.created_at.strftime('%d %b, %H:%M:%S') }}</td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="6" class="text-center text-dim-c py-4">No AI scans logged yet.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Users - Admin - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container">
+    <div class="row g-4">
+      <div class="col-lg-3">
+        {% include "admin/_nav.html" %}
+      </div>
+      <div class="col-lg-9">
+        <h1 class="mb-4">Users <span class="text-dim-c fs-5">({{ users|length }})</span></h1>
+        <div class="glass p-4">
+          <div class="table-responsive">
+            <table class="table table-trust mb-0">
+              <thead>
+                <tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Verified</th><th>Joined</th></tr>
+              </thead>
+              <tbody>
+                {% for u in users %}
+                  <tr>
+                    <td>{{ u.id }}</td>
+                    <td class="fw-bold">{{ u.full_name }}</td>
+                    <td class="small">{{ u.email }}</td>
+                    <td>
+                      {% if u.is_admin %}<span class="status-pill badge-dangerous" style="font-size:.72rem;">ADMIN</span>
+                      {% else %}<span class="kbd-chip">user</span>{% endif %}
+                    </td>
+                    <td>{% if u.is_verified %}<span style="color:var(--green);">&#10003;</span>{% else %}<span class="text-dim-c">&#10007;</span>{% endif %}</td>
+                    <td class="text-dim-c small">{{ u.created_at.strftime('%d %b %Y') }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,387 @@
+{% extends "base.html" %}
+
+{% block title %}Product Scanner - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container" style="max-width: 880px;">
+    <div class="text-center mb-4 reveal">
+      <span class="hero-badge mb-3">&#128722; PRODUCT INGREDIENT SCANNER</span>
+      <h1 class="mt-3">Check your <span class="text-gradient">ingredients</span></h1>
+      <p class="text-muted-c mx-auto" style="max-width:560px;">Paste an ingredient list or upload a label image. The label is matched against the verified TrustLens product database, then every ingredient is cross-checked against the reference ingredient database. The safety score is built from what is actually detected &mdash; an unknown ingredient is never treated as a danger by default.</p>
+    </div>
+
+    <div class="glass p-4 p-lg-5 mb-4 reveal">
+      <form id="scanForm">
+        <div class="mb-3">
+          <label class="form-label-c" for="ingredient_input">Paste text of ingredients</label>
+          <textarea id="ingredient_input" name="ingredient_input" rows="5" class="form-control form-control-trust" placeholder="Enter ingredients list here, e.g. Water, Glycerin, Methylparaben, Sodium benzoate (E211)..."></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label-c">Or upload product label image(s)</label>
+          <div class="drop-zone">
+            <div class="dz-icon">&#128247;</div>
+            <div class="dz-text">Drop label photos here or click to browse<br><span class="text-dim-c small">Front label, back label, ingredient panel &mdash; multiple images supported</span></div>
+            <div class="dz-filename text-dim-c small mt-2"></div>
+            <input type="file" id="ingredient_image" name="ingredient_image" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" multiple hidden>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <button type="submit" class="btn btn-trust flex-fill">Scan Ingredients</button>
+          <button type="button" id="resetBtn" class="btn btn-ghost">Reset</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="resultBox" class="result-hidden"></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .ing-card { background: rgba(255,255,255,0.03); border: 1px solid var(--border-soft); border-radius: 12px; padding: 0.9rem 1rem; }
+  .cat-chip { display: inline-block; padding: 0.18rem 0.6rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+  .cat-low { background: rgba(45, 212, 167, 0.14); color: var(--green); }
+  .cat-moderate { background: rgba(245, 181, 68, 0.14); color: var(--yellow); }
+  .cat-higher { background: rgba(255, 95, 109, 0.14); color: var(--red); }
+  .cat-unknown { background: rgba(56, 214, 255, 0.14); color: var(--accent-2); }
+  .det-chip { display: inline-block; margin-top: 0.25rem; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.68rem; font-weight: 700; white-space: nowrap; background: rgba(255,255,255,0.06); color: var(--text-dim); border: 1px solid var(--border-soft); }
+  .det-found { background: rgba(45, 212, 167, 0.12); color: var(--green); border-color: rgba(45,212,167,0.3); }
+  .det-missed { background: rgba(245, 181, 68, 0.10); color: var(--yellow); border-color: rgba(245,181,68,0.3); }
+  .det-extra { background: rgba(56, 214, 255, 0.10); color: var(--accent-2); border-color: rgba(56,214,255,0.3); }
+  .det-unknown { background: rgba(255, 95, 109, 0.10); color: var(--red); border-color: rgba(255,95,109,0.3); }
+  .prod-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.9rem; }
+  .prod-grid > div { background: rgba(255,255,255,0.03); border: 1px solid var(--border-soft); border-radius: 10px; padding: 0.65rem 0.8rem; }
+  .conf-chip { display: inline-block; padding: 0.3rem 0.8rem; border-radius: 999px; font-size: 0.78rem; font-weight: 700; margin: 0 0.4rem 0.4rem 0; }
+</style>
+<script>
+document.getElementById("scanForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const btn = this.querySelector("button[type=submit]");
+  const text = document.getElementById("ingredient_input").value.trim();
+  const fileInput = document.getElementById("ingredient_image");
+  if (!text && !(fileInput.files && fileInput.files.length)) {
+    TrustLens.showError(document.getElementById("resultBox"),
+      "Paste an ingredient list or upload a product label image to continue.");
+    return;
+  }
+  const fd = new FormData();
+  if (text) fd.append("ingredient_input", text);
+  if (fileInput.files && fileInput.files.length) {
+    for (let i = 0; i < fileInput.files.length; i++) {
+      fd.append("ingredient_image", fileInput.files[i]);
+    }
+  }
+
+  TrustLens.loading(btn, "Analysing product...");
+  TrustLens.apiPost("/api/scan-product", fd, true)
+    .then(function (data) { renderResult(data); })
+    .catch(function (err) { TrustLens.showError(document.getElementById("resultBox"), err.message); })
+    .finally(function () { TrustLens.doneLoading(btn); });
+});
+
+document.getElementById("ingredient_image").addEventListener("change", function () {
+  const zone = document.querySelector(".drop-zone");
+  const label = zone && zone.querySelector(".dz-filename");
+  if (!label) return;
+  label.textContent = this.files && this.files.length
+    ? this.files.length + " image(s) selected: " + Array.from(this.files).map(function (f) { return f.name; }).join(", ")
+    : "";
+});
+
+document.getElementById("resetBtn").addEventListener("click", function () {
+  document.getElementById("scanForm").reset();
+  document.getElementById("ingredient_image").files = null;
+  const zone = document.querySelector(".drop-zone");
+  const label = zone && zone.querySelector(".dz-filename");
+  if (label) label.textContent = "";
+  const box = document.getElementById("resultBox");
+  box.classList.add("result-hidden");
+  box.innerHTML = "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+
+function catChip(cat) {
+  const map = { low: "cat-low", moderate: "cat-moderate", higher: "cat-higher", unknown: "cat-unknown" };
+  const label = { low: "Low concern", moderate: "Moderate concern", higher: "Higher concern", unknown: "Unknown" };
+  return '<span class="cat-chip ' + (map[cat] || "cat-unknown") + '">' + (label[cat] || cat) + "</span>";
+}
+
+function detChip(det) {
+  const map = {
+    "Found on label": "det-found",
+    "Expected from database but not visible": "det-missed",
+    "Additional label ingredient": "det-extra",
+    "Unknown ingredient on label": "det-unknown"
+  };
+  const cls = map[det] || "det-unknown";
+  return '<span class="det-chip ' + cls + '">' + __escapeHtml(det || "Detection unknown") + "</span>";
+}
+
+function concText(c) {
+  if (c.concentration == null) return "Concentration: not disclosed";
+  let s = c.concentration;
+  if (c.concentration_unit) s += " " + c.concentration_unit;
+  return "Concentration: " + s;
+}
+
+function ingredientCard(ing) {
+  const src = (ing.source && ing.source.length)
+    ? '<div class="text-dim-c small mt-1">Source: ' + __escapeHtml(ing.source.join(", ")) +
+      (ing.source_url ? ' &middot; <a href="' + __escapeHtml(ing.source_url) + '" target="_blank" rel="noopener" class="link-dim">reference</a>' : "") + "</div>"
+    : "";
+  const bits = [];
+  if (ing.concentration != null || ing.concentration_unit) bits.push(__escapeHtml(concText(ing)));
+  if (ing.ingredient_type) bits.push("Type: " + __escapeHtml(ing.ingredient_type));
+  if (ing.ingestion_status) bits.push("Ingestion: " + __escapeHtml(ing.ingestion_status));
+  if (ing.evidence_level) bits.push("Evidence: " + __escapeHtml(ing.evidence_level));
+  const bitHtml = bits.length
+    ? '<div class="text-dim-c small mt-1">' + bits.join(" &middot; ") + "</div>" : "";
+  const concerns = (ing.concerns && ing.concerns.length)
+    ? '<ul class="reason-list mt-2">' + ing.concerns.map(function (c) {
+        return '<li class="' + (ing.category === "higher" ? "r-danger" : "r-warning") + '"><span class="dot"></span><span>' + __escapeHtml(c) + "</span></li>";
+      }).join("") + "</ul>" : "";
+  return '<div class="ing-card">' +
+    '<div class="d-flex flex-wrap align-items-start justify-content-between gap-2">' +
+      '<div><div class="fw-bold">' + __escapeHtml(ing.name) + "</div>" +
+      '<div class="text-dim-c small">' + __escapeHtml(ing.use) + "</div></div>" +
+      '<div class="text-end">' + catChip(ing.category) + "<br>" + detChip(ing.detection) + "</div>" +
+    "</div>" +
+    (ing.info ? '<p class="small mb-1 mt-2 text-muted-c">' + __escapeHtml(ing.info) + "</p>" : "") +
+    (ing.reason ? '<p class="small mb-1 text-muted-c">' + __escapeHtml(ing.reason) + "</p>" : "") +
+    concerns + bitHtml + src +
+  "</div>";
+}
+
+function matchChip(label, level) {
+  const cls = level === "High" ? "cat-low" : level === "Medium" ? "cat-moderate"
+    : level === "BrandOnly" ? "cat-unknown" : "cat-unknown";
+  return '<span class="cat-chip ' + cls + '">' + __escapeHtml(label || "Database match: Not available") + "</span>";
+}
+
+function renderProductHeader(data) {
+  const p = data.product;
+  if (!p) {
+    return '<div class="glass p-3 mb-3">' +
+      '<div class="fw-bold small text-uppercase text-dim-c mb-2">Product match</div>' +
+      '<div class="fw-bold mb-1">' + __escapeHtml(data.product_name || "Not identified") + "</div>" +
+      matchChip(data.database_match_label, data.database_match) +
+      "</div>";
+  }
+  const cells = [];
+  function cell(label, value) {
+    if (value != null && value !== "") cells.push(
+      '<div><span class="text-dim-c small d-block">' + label + "</span><div>" + value + "</div></div>"
+    );
+  }
+  cell("Brand", __escapeHtml(p.brand_name));
+  cell("Product", __escapeHtml(p.product_name + (p.product_variant ? " (" + p.product_variant + ")" : "")));
+  cell("Category", __escapeHtml([p.category, p.subcategory].filter(Boolean).join(" &middot; ")));
+  cell("Intended use", __escapeHtml(p.intended_use));
+  cell("Manufacturer", __escapeHtml(p.manufacturer));
+  cell("Market", __escapeHtml(p.market));
+  cell("Barcode", __escapeHtml(p.barcode));
+  cell(data.analysis_mode_label || "Consumption status", __escapeHtml(p.consumption_status || "Unknown"));
+
+  let warningsHtml = "";
+  if (p.warnings && p.warnings.length) {
+    warningsHtml = '<div class="mt-4"><div class="fw-bold small text-uppercase mb-2" style="color:var(--yellow)">Verified product warnings</div>' +
+      '<ul class="reason-list">' + p.warnings.map(function (w) {
+        return '<li class="r-warning"><span class="dot"></span><span>' + __escapeHtml(w) + "</span></li>";
+      }).join("") + "</ul></div>";
+  }
+
+  return '<div class="glass p-4 mb-3">' +
+    '<div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">' +
+      '<div>' +
+        '<div class="fw-bold small text-uppercase text-dim-c mb-1">Verified product</div>' +
+        '<h5 class="mb-1">' + __escapeHtml(p.brand_name + " " + p.product_name) + "</h5>" +
+        matchChip(data.database_match_label, data.database_match) +
+      "</div>" +
+      '<div class="text-end">' + consumptionChip(p.consumption_status) + "</div>" +
+    "</div>" +
+    '<div class="prod-grid">' + cells.join("") + "</div>" +
+    (p.consumption_notice ? '<p class="small mt-3 mb-0 text-muted-c">' + __escapeHtml(p.consumption_notice) + "</p>" : "") +
+    warningsHtml +
+  "</div>";
+}
+
+function consumptionChip(status) {
+  if (!status) return '<span class="det-chip det-unknown">Consumption status: unknown</span>';
+  const cls = status === "Intended for human consumption" ? "det-found"
+    : status === "Not intended for human consumption" ? "det-missed" : "det-extra";
+  return '<span class="det-chip ' + cls + '">Consumption status: ' + __escapeHtml(status) + "</span>";
+}
+
+function renderResult(data) {
+  const box = document.getElementById("resultBox");
+  box.classList.remove("result-hidden");
+  box.classList.add("glass", "p-4", "p-lg-5", "result-box");
+
+  let banner = "";
+  if (!data.reliable) {
+    banner = '<div class="alert" style="background:rgba(245,181,68,0.12);border:1px solid rgba(245,181,68,0.35);color:var(--yellow);padding:0.7rem 1rem;border-radius:10px;font-size:0.9rem;">' +
+      "&#9888; <strong>Insufficient information for a reliable assessment.</strong>" +
+      (data.ocr_failed ? " Image quality is insufficient for reliable product analysis. Please upload a clearer image of the front or back label." : " No ingredient list could be parsed from what you provided.") +
+      "</div>";
+  } else if (!data.score_available) {
+    banner = '<div class="alert" style="background:rgba(56,214,255,0.12);border:1px solid rgba(56,214,255,0.35);color:var(--accent-2);padding:0.7rem 1rem;border-radius:10px;font-size:0.9rem;">' +
+      "&#128269; <strong>Limited assessment.</strong> " +
+      __escapeHtml(data.score_not_available_reason || "Unable to provide a reliable overall safety score because the exact product could not be verified.") +
+      "</div>";
+  } else {
+    banner = '<div class="alert" style="background:rgba(45,212,167,0.10);border:1px solid rgba(45,212,167,0.35);color:var(--green);padding:0.7rem 1rem;border-radius:10px;font-size:0.9rem;">' +
+      "&#10003; Analysis complete &mdash; " + __escapeHtml(data.assessment) + "</div>";
+  }
+
+  const showScore = data.reliable && data.score_available;
+  const gaugeHtml = showScore
+    ? '<div class="gauge-wrap" id="gauge"></div><div class="mt-3 text-center" id="statusPill"></div>'
+    : '<div class="text-center py-4" style="color:var(--text-dim);">' +
+      (data.reliable
+        ? '&#128269; <strong>Score not available</strong>' +
+          '<div class="small mt-2">' + __escapeHtml(data.score_not_available_reason || "Insufficient verified information about the exact product.") + "</div>"
+        : "&#128269; No score &mdash; insufficient evidence") +
+      "</div>";
+
+  const conf = data.confidence || {};
+  const confidenceHtml = '<div class="mt-3">' +
+    '<span class="sum-chip info">Confidence: ' + (conf.overall != null ? conf.overall + "%" : "n/a") + "</span>" +
+    (conf.product_match != null ? '<span class="sum-chip info">Product match: ' + conf.product_match + "%</span>" : "") +
+    (conf.ingredient_coverage != null ? '<span class="sum-chip info">Ingredient coverage: ' + conf.ingredient_coverage + "%</span>" : "") +
+    (conf.ocr != null ? '<span class="sum-chip info">OCR read: ' + conf.ocr + "%</span>" : "") +
+    "</div>";
+
+  const sections = [];
+
+  if (data.product_name) {
+    sections.push(renderProductHeader(data));
+  } else if (data.database_match) {
+    sections.push('<div class="mt-3">' + matchChip(data.database_match_label, data.database_match) + "</div>");
+  }
+
+  if (data.extracted_text) {
+    sections.push('<div class="mt-3"><div class="fw-bold small text-uppercase text-dim-c mb-2">Text read from the image (OCR)</div>' +
+      '<div class="p-3" style="background:rgba(255,255,255,0.03);border:1px solid var(--border-soft);border-radius:10px;font-size:0.85rem;max-height:220px;overflow:auto;">' +
+      __escapeHtml(data.extracted_text) + "</div></div>");
+  }
+
+  if (data.category_label) {
+    sections.push('<div class="mt-3">' +
+      '<span class="detail-chip"><strong>Product category:</strong> ' + __escapeHtml(data.category_label) + "</span>" +
+      (data.analysis_mode_label ? '<span class="detail-chip">' + __escapeHtml(data.analysis_mode_label) + "</span>" : "") +
+      "</div>");
+  }
+
+  if (data.technical_specs && data.technical_specs.length) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase text-dim-c mb-2">Visible specifications</div>' +
+      '<ul class="reason-list">' + data.technical_specs.map(function (s) {
+        return '<li class="r-info"><span class="dot"></span><span><strong>' + __escapeHtml(s.label) + ":</strong> " +
+          __escapeHtml(s.value) + ' <span class="text-dim-c small">(' + __escapeHtml(s.detection) + ")</span></span></li>";
+      }).join("") + "</ul></div>");
+  }
+
+  if (data.label_warnings && data.label_warnings.length) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase mb-2" style="color:var(--yellow)">Warnings printed on the label</div>' +
+      '<ul class="reason-list">' + data.label_warnings.map(function (w) {
+        return '<li class="r-warning"><span class="dot"></span><span>' + __escapeHtml(w) + "</span></li>";
+      }).join("") + "</ul></div>");
+  }
+
+  if (data.claims && data.claims.length) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase text-dim-c mb-2">Claims on the label</div>' +
+      '<ul class="reason-list">' + data.claims.map(function (c) {
+        return '<li class="r-info"><span class="dot"></span><span><strong>' + __escapeHtml(c.claim) +
+          '</strong> &mdash; <span class="detail-chip">' + __escapeHtml(c.evidence_status) +
+          "</span><div class=\"small text-dim-c\">" + __escapeHtml(c.note) + "</div></span></li>";
+      }).join("") + "</ul></div>");
+  }
+
+  if (data.image_quality && data.image_quality.length) {
+    sections.push('<div class="mt-3"><div class="fw-bold small text-uppercase text-dim-c mb-2">Image quality</div>' +
+      '<div>' + data.image_quality.map(function (q) {
+        return '<span class="detail-chip">' + __escapeHtml(q.replace(/_/g, " ")) + "</span>";
+      }).join("") + "</div>" +
+      "<p class=\"text-dim-c small mt-2 mb-0\">If the image is hard to read, upload a clearer photo of the front or back label.</p></div>");
+  }
+
+  if (data.ingredients && data.ingredients.length) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase text-dim-c mb-2">Ingredients (' + data.ingredient_count + ")</div>" +
+      '<div class="d-flex flex-column gap-2">' + data.ingredients.map(ingredientCard).join("") + "</div></div>");
+  }
+
+  if (data.concerns && data.concerns.length) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase mb-2" style="color:var(--red)">Detected concerns</div>' +
+      '<ul class="reason-list">' + data.concerns.map(function (c) {
+        return '<li class="r-danger"><span class="dot"></span><span>' +
+          "<strong>" + __escapeHtml(c.name) + "</strong> &mdash; " + __escapeHtml(c.reason || c.info) + "</span></li>";
+      }).join("") + "</ul></div>");
+  }
+
+  if (data.positives && data.positives.length) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase mb-2" style="color:var(--green)">Positive factors</div>' +
+      '<ul class="reason-list">' + data.positives.map(function (p) {
+        return '<li class="r-success"><span class="dot"></span><span>' + __escapeHtml(p) + "</span></li>";
+      }).join("") + "</ul></div>");
+  }
+
+  if (data.unknown_ingredients && data.unknown_ingredients.length) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase mb-2" style="color:var(--accent-2)">Unknown / not in database</div>' +
+      '<p class="text-dim-c small mb-1">Unknown does <strong>not</strong> mean dangerous &mdash; it means there is insufficient evidence in the built-in reference to classify the ingredient.</p>' +
+      '<div>' + data.unknown_ingredients.map(function (u) {
+        return '<span class="detail-chip">' + __escapeHtml(u) + "</span>";
+      }).join("") + "</div></div>");
+  }
+
+  const dq = data.data_quality || {};
+  sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase text-dim-c mb-2">Data quality</div>' +
+    '<div class="mb-2">' +
+      '<span class="detail-chip"><strong>OCR quality:</strong> ' + __escapeHtml(dq.ocr || "n/a") + "</span>" +
+      '<span class="detail-chip"><strong>Database match:</strong> ' + __escapeHtml(dq.database_match || "Not available") + "</span>" +
+    "</div>" +
+    '<ul class="reason-list">' + (data.missing || []).map(function (m) {
+      return '<li class="r-info"><span class="dot"></span><span>' + __escapeHtml(m) + "</span></li>";
+    }).join("") + "</ul></div>");
+
+  if (data.explanation) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase text-dim-c mb-2">Why this assessment</div>' +
+      '<p class="mb-0">' + __escapeHtml(data.explanation) + "</p></div>");
+  }
+
+  if (data.sources && data.sources.length) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase text-dim-c mb-2">Sources</div>' +
+      '<ul class="reason-list">' + data.sources.map(function (s) {
+        const url = s.source_url ? ' &middot; <a href="' + __escapeHtml(s.source_url) + '" target="_blank" rel="noopener" class="link-dim">reference</a>' : "";
+        return '<li class="r-info"><span class="dot"></span><span>' + __escapeHtml(s.source) +
+          (s.source_date ? " (" + __escapeHtml(s.source_date) + ")" : "") + url + "</span></li>";
+      }).join("") + "</ul></div>");
+  }
+
+  box.innerHTML =
+    banner +
+    '<div class="row g-4 align-items-center mt-1">' +
+      '<div class="col-md-4 text-center">' + gaugeHtml + "</div>" +
+      '<div class="col-md-8">' +
+        '<h5 class="mb-2">' + (showScore ? "Overall assessment" : (data.reliable ? "Limited assessment" : "Assessment could not be completed")) + "</h5>" +
+        (data.product_name ? '<p class="text-dim-c small mb-2"><strong>Product:</strong> ' + __escapeHtml(data.product_name) + "</p>" : "") +
+        confidenceHtml +
+        '<p class="text-dim-c small mt-3 mb-0">Processing time: ' + data.processing_time_ms + " ms</p>" +
+      "</div>" +
+    "</div>" +
+    sections.join("");
+
+  if (showScore) {
+    TrustLens.renderGauge(document.getElementById("gauge"), data.score);
+    const cls = data.risk_level === "higher" ? "badge-dangerous"
+      : (data.risk_level === "moderate" || data.risk_level === "unknown") ? "badge-warning" : "badge-safe";
+    const label = data.risk_level === "higher" ? "HIGHER CONCERN"
+      : data.risk_level === "moderate" ? "MODERATE CONCERN"
+      : data.risk_level === "unknown" ? "UNKNOWN / INSUFFICIENT EVIDENCE" : "LOW CONCERN";
+    document.getElementById("statusPill").innerHTML =
+      '<span class="status-pill ' + cls + '">' + label + "</span>";
+  }
+  TrustLens.showResult(box, data);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Ingredients - Admin - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container">
+    <div class="row g-4">
+      <div class="col-lg-3">
+        {% include "admin/_nav.html" %}
+      </div>
+      <div class="col-lg-9">
+        <h1 class="mb-4">Ingredient Database</h1>
+        <p class="text-muted-c mb-4">
+          Reference ingredient records with evidence-based safety information. The risk category is
+          assigned from curated evidence and &mdash; for "unknown" &mdash; stays unknown rather than
+          being treated as danger. Ingredients used by a product cannot be deleted until that link is removed.
+        </p>
+
+        <div class="glass p-4 mb-4">
+          <details>
+            <summary class="fw-bold mb-2">&#10133; Add a new ingredient</summary>
+            <form method="post" action="{{ url_for('admin.ingredient_add') }}" class="row g-2">
+              <div class="col-md-6">
+                <label class="form-label-c" for="ingredient_name">Ingredient name *</label>
+                <input type="text" class="form-control form-control-trust" id="ingredient_name" name="ingredient_name" required>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label-c" for="aliases">Aliases (comma separated)</label>
+                <input type="text" class="form-control form-control-trust" id="aliases" name="aliases" placeholder="e.g. e211, sodium salt of benzoic acid">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label-c" for="ingredient_type">Type</label>
+                <select class="form-select form-control-trust" id="ingredient_type" name="ingredient_type">
+                  <option value="">--</option>
+                  {% for t in ingredient_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label-c" for="risk_category">Risk category</label>
+                <select class="form-select form-control-trust" id="risk_category" name="risk_category">
+                  {% for c in risk_categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label-c" for="evidence_level">Evidence level</label>
+                <select class="form-select form-control-trust" id="evidence_level" name="evidence_level">
+                  <option value="">--</option>
+                  {% for e in evidence_levels %}<option value="{{ e }}">{{ e }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label-c" for="common_function">Common function</label>
+                <input type="text" class="form-control form-control-trust" id="common_function" name="common_function">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label-c" for="ingestion_status">Ingestion status</label>
+                <input type="text" class="form-control form-control-trust" id="ingestion_status" name="ingestion_status">
+              </div>
+              <div class="col-12">
+                <label class="form-label-c" for="description">Description</label>
+                <textarea class="form-control form-control-trust" id="description" name="description" rows="2"></textarea>
+              </div>
+              <div class="col-12">
+                <label class="form-label-c" for="safety_information">Safety information</label>
+                <textarea class="form-control form-control-trust" id="safety_information" name="safety_information" rows="2"></textarea>
+              </div>
+              <div class="col-12">
+                <label class="form-label-c" for="concerns">Potential concerns (one per line)</label>
+                <textarea class="form-control form-control-trust" id="concerns" name="concerns" rows="2"></textarea>
+              </div>
+              <div class="col-12">
+                <label class="form-label-c" for="external_use_information">External use information</label>
+                <textarea class="form-control form-control-trust" id="external_use_information" name="external_use_information" rows="2"></textarea>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label-c" for="source">Source</label>
+                <input type="text" class="form-control form-control-trust" id="source" name="source" placeholder="e.g. EFSA, US FDA">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label-c" for="source_url">Source URL</label>
+                <input type="url" class="form-control form-control-trust" id="source_url" name="source_url">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label-c" for="source_date">Source date</label>
+                <input type="text" class="form-control form-control-trust" id="source_date" name="source_date" placeholder="e.g. 2026-08">
+              </div>
+              <div class="col-12">
+                <button type="submit" class="btn btn-trust">Add Ingredient</button>
+              </div>
+            </form>
+          </details>
+        </div>
+
+        <div class="glass p-4">
+          <div class="table-responsive">
+            <table class="table table-trust mb-0 align-middle">
+              <thead>
+                <tr><th>Ingredient</th><th>Type</th><th>Risk</th><th>Evidence</th><th>Used by</th><th class="text-end"></th></tr>
+              </thead>
+              <tbody>
+                {% for r in rows %}
+                  <tr>
+                    <td>
+                      <div class="fw-bold">{{ r.ingredient_name }}</div>
+                      <div class="text-dim-c small">{{ r.ingredient_id }}</div>
+                    </td>
+                    <td class="small">{{ r.ingredient_type or '&mdash;'|safe }}</td>
+                    <td class="small">
+                      <span class="cat-chip {{ 'cat-low' if r.risk_category == 'low' else 'cat-moderate' if r.risk_category == 'moderate' else 'cat-higher' if r.risk_category == 'higher' else 'cat-unknown' }}">{{ r.risk_category or 'unknown' }}</span>
+                    </td>
+                    <td class="small">{{ r.evidence_level or '&mdash;'|safe }}</td>
+                    <td class="small">{{ r.product_links_count or 0 }}</td>
+                    <td class="text-end">
+                      <form method="post" action="{{ url_for('admin.ingredient_delete', ingredient_id=r.ingredient_id) }}" class="d-inline"
+                            onsubmit="return confirm('Delete {{ r.ingredient_name }}?');">
+                        <button type="submit" class="btn btn-danger-trust btn-sm-trust">Delete</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="6" class="text-center text-dim-c py-4">No ingredients in the reference database.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

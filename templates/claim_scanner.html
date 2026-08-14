@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Claim Checker - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container" style="max-width: 760px;">
+    <div class="text-center mb-4 reveal">
+      <span class="hero-badge mb-3">&#128269; CLAIM CHECKER</span>
+      <h1 class="mt-3">Fact-check a <span class="text-gradient">claim</span></h1>
+      <p class="text-muted-c mx-auto" style="max-width:560px;">Paste a viral statement, news snippet or product claim. The checker matches it against a built-in evidence base and always separates "false" from "we could not verify it".</p>
+    </div>
+
+    <div class="glass p-4 p-lg-5 mb-4 reveal">
+      <form id="scanForm">
+        <label class="form-label-c" for="claim_input">Enter the claim or statement to verify</label>
+        <textarea id="claim_input" name="claim_input" rows="6" class="form-control form-control-trust" placeholder='Paste claim here, e.g. "Drinking this product cures diabetes."'></textarea>
+        <div class="form-text text-dim-c mt-2">Paste the exact wording so the checker can match it accurately. Claims that cannot be verified are reported honestly &mdash; we never guess.</div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <button type="submit" class="btn btn-trust flex-fill">Check Claim</button>
+          <button type="button" id="resetBtn" class="btn btn-ghost">Reset</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="resultBox" class="result-hidden"></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .verdict-pill { display: inline-block; padding: 0.45rem 1.1rem; border-radius: 999px;
+    font-size: 0.85rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
+  .v-supported { background: rgba(45, 212, 167, 0.14); color: var(--green); border: 1px solid rgba(45, 212, 167, 0.35); }
+  .v-misleading, .v-unsupported { background: rgba(245, 181, 68, 0.14); color: var(--yellow); border: 1px solid rgba(245, 181, 68, 0.35); }
+  .v-false { background: rgba(255, 95, 109, 0.14); color: var(--red); border: 1px solid rgba(255, 95, 109, 0.35); }
+  .v-unverifiable, .v-insufficient { background: rgba(56, 214, 255, 0.14); color: var(--accent-2); border: 1px solid rgba(56, 214, 255, 0.35); }
+  .src-chip { display: inline-block; padding: 0.3rem 0.8rem; border-radius: 999px;
+    font-size: 0.78rem; font-weight: 600; margin: 0 0.4rem 0.4rem 0;
+    background: rgba(124, 92, 255, 0.12); color: var(--accent-1); }
+</style>
+<script>
+document.getElementById("scanForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const btn = this.querySelector("button[type=submit]");
+  const claim = document.getElementById("claim_input").value.trim();
+  if (!claim) {
+    TrustLens.showError(document.getElementById("resultBox"), "Please enter a claim to analyse.");
+    return;
+  }
+  TrustLens.loading(btn, "Checking claim...");
+  TrustLens.apiPost("/api/scan-claim", { claim: claim })
+    .then(function (data) { renderResult(data); })
+    .catch(function (err) { TrustLens.showError(document.getElementById("resultBox"), err.message); })
+    .finally(function () { TrustLens.doneLoading(btn); });
+});
+
+document.getElementById("resetBtn").addEventListener("click", function () {
+  document.getElementById("scanForm").reset();
+  const box = document.getElementById("resultBox");
+  box.classList.add("result-hidden");
+  box.innerHTML = "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+
+function verdictClass(v) {
+  const vlow = (v || "").toLowerCase();
+  if (vlow === "supported" || vlow === "mostly supported") return "v-supported";
+  if (vlow === "false") return "v-false";
+  if (vlow === "misleading" || vlow === "unsupported") return "v-misleading";
+  return "v-unverifiable";
+}
+
+function renderResult(data) {
+  const box = document.getElementById("resultBox");
+  box.classList.remove("result-hidden");
+  box.classList.add("glass", "p-4", "p-lg-5", "result-box");
+
+  const sections = [];
+
+  sections.push('<div class="text-center mb-3">' +
+    '<span class="verdict-pill ' + verdictClass(data.verdict) + '">' + __escapeHtml(data.verdict || "No verdict") + "</span>" +
+    '<div class="mt-3 d-flex flex-wrap justify-content-center gap-2">' +
+      '<span class="detail-chip"><strong>Confidence:</strong> ' + __escapeHtml(data.confidence || "n/a") + "</span>" +
+      '<span class="detail-chip"><strong>Category:</strong> ' + __escapeHtml(data.category || "General") + "</span>" +
+    "</div></div>");
+
+  if (data.explanation) {
+    sections.push('<div class="mt-3"><div class="fw-bold small text-uppercase text-dim-c mb-2">Why</div>' +
+      '<p class="mb-0">' + __escapeHtml(data.explanation) + "</p></div>");
+  }
+
+  if (data.evidence && data.evidence.length) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase text-dim-c mb-2">Evidence used</div>' +
+      '<ul class="reason-list">' + data.evidence.map(function (e) {
+        return '<li class="r-info"><span class="dot"></span><span>' + __escapeHtml(e) + "</span></li>";
+      }).join("") + "</ul></div>");
+  }
+
+  if (data.sources && data.sources.length) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase text-dim-c mb-2">Sources</div>' +
+      '<div>' + data.sources.map(function (s) {
+        return '<span class="src-chip">' + __escapeHtml(s.name || s) + "</span>";
+      }).join("") + "</div>" +
+      '<p class="text-dim-c small mt-2 mb-0">Source names refer to the assessments these organisations publish. The evidence summaries are based on their public positions; no deep links are fabricated.</p></div>');
+  } else {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase text-dim-c mb-2">Sources</div>' +
+      '<p class="text-dim-c small mb-0">No reliable source could be matched for this specific claim. This means the claim could not be verified &mdash; not that it is false.</p></div>');
+  }
+
+  if (data.limitations) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase text-dim-c mb-2">Limitations</div>' +
+      '<p class="text-dim-c small mb-0">' + __escapeHtml(data.limitations) + "</p></div>");
+  }
+
+  if (data.caution) {
+    sections.push('<div class="mt-4" style="background:rgba(245,181,68,0.10);border:1px solid rgba(245,181,68,0.35);border-radius:10px;padding:0.8rem 1rem;">' +
+      '<span class="fw-bold" style="color:var(--yellow)">&#9888; Important</span>' +
+      '<p class="small mb-0 mt-1" style="color:var(--text-dim)">' + __escapeHtml(data.caution) + "</p></div>");
+  }
+
+  sections.push('<div class="mt-4" style="background:rgba(56,214,255,0.08);border:1px solid rgba(56,214,255,0.25);border-radius:10px;padding:0.8rem 1rem;">' +
+    '<span class="fw-bold" style="color:var(--accent-2)">&#128274; Honesty note</span>' +
+    '<p class="small mb-0 mt-1" style="color:var(--text-dim)">This result was produced by a local evidence engine. It is general information, not a verified fact-check, medical advice or financial advice. Where evidence was insufficient, that is stated explicitly.</p></div>');
+
+  box.innerHTML =
+    '<h5 class="mb-2">Claim analysis</h5>' +
+    sections.join("") +
+    '<p class="text-dim-c small mt-3 mb-0">Processing time: ' + data.processing_time_ms + " ms</p>";
+
+  TrustLens.showResult(box, data);
+}
+</script>
+{% endblock %}

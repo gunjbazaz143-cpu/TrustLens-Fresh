@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% from "components/report_status.html" import status_pill %}
+
+{% block title %}Dashboard - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container">
+    <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4 reveal">
+      <div>
+        <span class="hero-badge mb-2">DASHBOARD</span>
+        <h1 class="mt-2 mb-1">Welcome back, <span class="text-gradient">{{ user.full_name }}</span></h1>
+        <p class="text-muted-c mb-0">Here is what the TrustLens community has verified.</p>
+      </div>
+      <a href="{{ url_for('scanners.website_scanner_page') }}" class="btn btn-trust">&#128270; New Scan</a>
+    </div>
+
+    <div class="row g-4 mb-4">
+      {% set stats = [
+        (counts.total_scans, 'Total Scans'),
+        (counts.dangerous_scans, 'Dangerous Found'),
+        (counts.safe_scans, 'Safe Scans'),
+        (counts.scam_reports, 'Total Scam Reports'),
+        (counts.users, 'Registered Users')
+      ] %}
+      {% for num, label in stats %}
+        <div class="col-6 col-md reveal">
+          <div class="glass-soft stat-card">
+            <div class="stat-num" data-count="{{ num }}">0</div>
+            <div class="stat-label">{{ label }}</div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="row g-4">
+      <div class="col-lg-7 reveal">
+        <div class="glass p-4 h-100">
+          <h5 class="mb-3">Recent website scans</h5>
+          {% if recent_scans %}
+            <div class="table-responsive">
+              <table class="table table-trust mb-0">
+                <thead>
+                  <tr><th>URL</th><th>Score</th><th>Status</th><th>Time</th></tr>
+                </thead>
+                <tbody>
+                  {% for scan in recent_scans %}
+                    <tr>
+                      <td class="small" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ scan.url }}</td>
+                      <td class="fw-bold">{{ scan.trust_score }}</td>
+                      <td>
+                        {% if scan.status == 'safe' %}<span class="status-pill badge-safe">SAFE</span>
+                        {% elif scan.status == 'warning' %}<span class="status-pill badge-warning">WARNING</span>
+                        {% else %}<span class="status-pill badge-dangerous">DANGEROUS</span>{% endif %}
+                      </td>
+                      <td class="text-dim-c small">{{ scan.created_at.strftime('%d %b, %H:%M') }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="text-center py-5">
+              <div class="fs-1 mb-2">&#128270;</div>
+              <p class="text-muted-c mb-3">No scans yet. Run your first website scan!</p>
+              <a href="{{ url_for('scanners.website_scanner_page') }}" class="btn btn-trust btn-sm-trust">Scan a Website</a>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="col-lg-5 reveal reveal-delay-1">
+        <div class="glass p-4 h-100">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">My scam reports</h5>
+            <a class="btn btn-ghost btn-sm-trust" href="{{ url_for('reports.list_reports') }}">&#9998; New report</a>
+          </div>
+
+          {% if new_updates %}
+            <div class="alert alert-trust alert-info d-flex align-items-center gap-2 mb-3" role="alert">
+              <span style="font-size:1.2rem;">&#128276;</span>
+              <span>You have {{ new_updates }} new update{% if new_updates != 1 %}s{% endif %} on your scam report{% if new_updates != 1 %}s{% endif %}.</span>
+            </div>
+          {% endif %}
+
+          {% if my_reports %}
+            {% for report in my_reports %}
+              <div class="glass-soft p-3 mb-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="fw-bold small">#{{ report.id }} &middot; {{ report.title }}</span>
+                  {{ status_pill(report.status) }}
+                </div>
+                <div class="d-flex flex-wrap gap-2 mb-1">
+                  <span class="kbd-chip">{{ report.scam_type }}</span>
+                  <span class="text-dim-c small">Updated {{ report.last_updated.strftime('%d %b, %H:%M') }}</span>
+                </div>
+                {% if report.latest_reply %}
+                  <p class="text-dim-c small mb-0" style="overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">
+                    <strong>Admin reply:</strong> {{ report.latest_reply.admin_message }}
+                  </p>
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="text-center py-5">
+              <div class="fs-1 mb-2">&#128276;</div>
+              <p class="text-muted-c mb-3">You have not submitted any scam reports yet.</p>
+              <a href="{{ url_for('reports.list_reports') }}" class="btn btn-danger-trust btn-sm-trust">Report a Scam</a>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

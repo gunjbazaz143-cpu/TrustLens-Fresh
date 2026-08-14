@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}Job Checker - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container" style="max-width: 880px;">
+    <div class="text-center mb-4 reveal">
+      <span class="hero-badge mb-3">&#128188; JOB CHECKER</span>
+      <h1 class="mt-3">Fake job or <span class="text-gradient">real offer?</span></h1>
+      <p class="text-muted-c mx-auto" style="max-width:560px;">We verify the company online (official website, Wikipedia, LinkedIn), check the HR email domain, job title, salary and scam phrases - then explain every point added or deducted. If the company cannot be verified, the score is capped low.</p>
+    </div>
+
+    <div class="glass p-4 p-lg-5 mb-4 reveal">
+      <form id="scanForm">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label-c" for="company_name">Company name</label>
+            <input type="text" class="form-control form-control-trust" id="company_name" name="company_name" placeholder="Acme Solutions">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label-c" for="job_title">Job title</label>
+            <input type="text" class="form-control form-control-trust" id="job_title" name="job_title" placeholder="Data Entry Operator">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label-c" for="email">Contact / HR email</label>
+            <input type="email" class="form-control form-control-trust" id="email" name="email" placeholder="hr@example.com">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label-c" for="salary">Salary offered</label>
+            <input type="text" class="form-control form-control-trust" id="salary" name="salary" placeholder="e.g. Rs 25,000/month">
+          </div>
+          <div class="col-12">
+            <label class="form-label-c" for="website">Company website</label>
+            <input type="url" class="form-control form-control-trust" id="website" name="website" placeholder="https://company.com">
+          </div>
+          <div class="col-12">
+            <label class="form-label-c" for="description">Job description</label>
+            <textarea class="form-control form-control-trust" id="description" name="description" rows="4" placeholder="Paste the job description or ad text here..."></textarea>
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-trust w-100">Check Job Offer</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <div id="resultBox" class="result-hidden"></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .sum-chip { display: inline-block; padding: 0.3rem 0.8rem; border-radius: 999px;
+    font-size: 0.78rem; font-weight: 700; margin: 0 0.4rem 0.4rem 0; letter-spacing: 0.04em; }
+  .sum-chip.pass { background: rgba(45, 212, 167, 0.14); color: var(--green); }
+  .sum-chip.fail { background: rgba(255, 95, 109, 0.14); color: var(--red); }
+  .sum-chip.info { background: rgba(56, 214, 255, 0.14); color: var(--accent-2); }
+  .chk-pts { white-space: nowrap; font-weight: 700; text-align: right; }
+  .chk-pts.neg { color: var(--red); }
+  .chk-pts.zero { color: var(--text-dim); }
+</style>
+<script>
+document.getElementById("scanForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const btn = this.querySelector("button[type=submit]");
+  const payload = {
+    company_name: document.getElementById("company_name").value.trim(),
+    job_title: document.getElementById("job_title").value.trim(),
+    email: document.getElementById("email").value.trim(),
+    salary: document.getElementById("salary").value.trim(),
+    website: document.getElementById("website").value.trim(),
+    description: document.getElementById("description").value.trim()
+  };
+  if (!payload.company_name && !payload.job_title && !payload.email) {
+    TrustLens.showError(document.getElementById("resultBox"), "Provide at least a company name, job title or email.");
+    return;
+  }
+  TrustLens.loading(btn, "Checking offer...");
+  TrustLens.apiPost("/api/scan-job", payload)
+    .then(function (data) { renderResult(data); })
+    .catch(function (err) { TrustLens.showError(document.getElementById("resultBox"), err.message); })
+    .finally(function () { TrustLens.doneLoading(btn); });
+});
+
+function renderResult(data) {
+  const box = document.getElementById("resultBox");
+  box.classList.remove("result-hidden");
+  box.classList.add("glass", "p-4", "p-lg-5", "result-box");
+
+  const ver = (data.details && data.details.company_verification) || {};
+  const signals = ver.verified_signals || 0;
+  const unverified = signals === 0;
+  let verBanner = "";
+  if (unverified) {
+    verBanner = '<div class="alert" style="background:rgba(255,95,109,0.12);border:1px solid rgba(255,95,109,0.35);color:var(--red);padding:0.6rem 0.9rem;border-radius:10px;font-size:0.9rem;">' +
+      "&#9888; Company could not be verified - no trusted online presence found (official website, Wikipedia or LinkedIn). Trust score capped.</div>";
+  } else {
+    verBanner = '<div class="alert" style="background:rgba(45,212,167,0.10);border:1px solid rgba(45,212,167,0.35);color:var(--green);padding:0.6rem 0.9rem;border-radius:10px;font-size:0.9rem;">' +
+      "&#10003; Company verified online (" + signals + " independent signal" + (signals === 1 ? "" : "s") + ")" +
+      (ver.official_website ? " &middot; " + __escapeHtml(ver.official_website) : "") +
+      "</div>";
+  }
+
+  box.innerHTML =
+    verBanner +
+    '<div class="row g-4 align-items-center">' +
+      '<div class="col-md-4 text-center">' +
+        '<div class="gauge-wrap" id="gauge"></div>' +
+        '<div class="mt-3" id="statusPill"></div>' +
+      '</div>' +
+      '<div class="col-md-8">' +
+        '<h5 class="mb-2">Job offer risk assessment</h5>' +
+        '<div class="mb-2">' +
+          '<span class="sum-chip pass">+' + (data.details && data.details.points_awarded || 0) + ' awarded</span>' +
+          '<span class="sum-chip fail">-' + (data.details && data.details.points_deducted || 0) + ' deducted</span>' +
+          (data.details && data.details.score_cap && data.details.score_cap < 100
+            ? '<span class="sum-chip info">capped at ' + data.details.score_cap + ' (insufficient verification)</span>'
+            : '') +
+        '</div>' +
+        '<div id="detailChips" class="mb-3"></div>' +
+        '<div class="fw-bold small text-uppercase text-dim-c mb-2">Why this score - every point added or deducted</div>' +
+        '<ul class="reason-list" id="reasons"></ul>' +
+        '<p class="text-dim-c small mt-3 mb-0">Processing time: ' + data.processing_time_ms + ' ms</p>' +
+      '</div>' +
+    '</div>';
+  TrustLens.renderGauge(document.getElementById("gauge"), data.score);
+  document.getElementById("statusPill").innerHTML = TrustLens.renderStatusPill(data.status);
+  renderJobReasons(document.getElementById("reasons"), data.reasons);
+  TrustLens.renderDetails(document.getElementById("detailChips"), data.details);
+  TrustLens.showResult(box, data);
+}
+
+function renderJobReasons(list, reasons) {
+  list.innerHTML = "";
+  (reasons || []).forEach(function (r) {
+    const pts = (r.points || 0);
+    const badge = pts > 0
+      ? '<span class="chk-pts" style="color:var(--green);min-width:34px">+' + pts + '</span>'
+      : pts < 0
+        ? '<span class="chk-pts neg" style="min-width:34px">' + pts + '</span>'
+        : '<span class="chk-pts zero" style="min-width:34px">0</span>';
+    const detail = r.detail
+      ? '<div style="color:var(--text-dim);font-size:0.78rem;margin-top:0.1rem;">' + __escapeHtml(r.detail) + "</div>"
+      : "";
+    const li = document.createElement("li");
+    li.className = "r-" + (r.severity || "info");
+    li.style.alignItems = "flex-start";
+    li.innerHTML =
+      '<span class="dot"></span>' +
+      '<span style="flex:1;min-width:0;">' + __escapeHtml(r.text) + detail + "</span>" +
+      badge;
+    list.appendChild(li);
+  });
+}
+</script>
+{% endblock %}

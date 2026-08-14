@@ -1,0 +1,33 @@
+# ---- Web framework ----
+Flask>=3.0.0
+Flask-SQLAlchemy>=3.1.1
+Flask-Login>=0.6.3
+Werkzeug>=3.0.0
+
+# ---- Database ----
+PyMySQL>=1.1.0
+cryptography>=41.0.0
+
+# ---- Configuration / env ----
+python-dotenv>=1.0.0
+
+# ---- Image & OCR ----
+Pillow>=10.1.0
+opencv-python-headless>=4.9.0
+easyocr>=1.7.1
+numpy>=1.26.0
+
+# ---- QR decoding ----
+pyzbar>=0.1.9
+zxing-cpp>=2.2.0
+qrcode>=7.4.2
+
+# ---- Networking / validation ----
+requests>=2.31.0
+validators>=0.22.0
+
+# ---- File upload parsing ----
+python-multipart>=0.0.6
+
+# ---- Email notifications ----
+Flask-Mail>=0.9.1

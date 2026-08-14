@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Something Went Wrong - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container text-center" style="max-width: 640px;">
+    <div class="display-1 fw-bold text-gradient-warm mb-2">500</div>
+    <h1 class="mb-3">Something went wrong</h1>
+    <p class="text-muted-c mb-4">{{ message or "An unexpected error occurred. The issue has been logged and we are on it." }}</p>
+    <div class="d-flex flex-wrap justify-content-center gap-3">
+      <a href="{{ url_for('main.index') }}" class="btn btn-trust">&#8592; Back to Home</a>
+      <a href="javascript:history.back()" class="btn btn-ghost">Go Back</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

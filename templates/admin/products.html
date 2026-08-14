@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Products - Admin - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container">
+    <div class="row g-4">
+      <div class="col-lg-3">
+        {% include "admin/_nav.html" %}
+      </div>
+      <div class="col-lg-9">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+          <h1 class="mb-0">Verified Products</h1>
+          <a class="btn btn-trust" href="{{ url_for('admin.product_new') }}">&#10133; Add Product</a>
+        </div>
+        <p class="text-muted-c mb-4">
+          Every product is a specific product/variant with its own verified ingredient records &mdash;
+          never a generic "brand &rarr; ingredients" mapping. Concentrations are stored only when
+          published by the manufacturer or a regulator; otherwise they stay unknown (never guessed).
+        </p>
+
+        <div class="glass p-4">
+          <div class="table-responsive">
+            <table class="table table-trust mb-0 align-middle">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Category</th>
+                  <th>Consumption</th>
+                  <th class="text-center">Ingredients</th>
+                  <th class="text-end"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for p in products %}
+                  <tr>
+                    <td>
+                      <div class="fw-bold">{{ p.brand_name }} {{ p.product_name }}</div>
+                      <div class="text-dim-c small">
+                        {% if p.product_variant %}{{ p.product_variant }} &middot;{% endif %}
+                        {{ p.manufacturer or 'Manufacturer n/a' }} &middot; {{ p.market or 'Market n/a' }}
+                      </div>
+                      <div class="text-dim-c small">{{ p.product_id }}</div>
+                    </td>
+                    <td class="small">
+                      {{ p.category or '&mdash;'|safe }}
+                      {% if p.subcategory %}<br><span class="text-dim-c">{{ p.subcategory }}</span>{% endif %}
+                    </td>
+                    <td class="small">{{ p.consumption_status or 'Unknown' }}</td>
+                    <td class="text-center">{{ p.ingredient_count }}</td>
+                    <td class="text-end text-nowrap">
+                      <a class="btn btn-ghost btn-sm-trust" href="{{ url_for('admin.product_edit', product_id=p.product_id) }}">Edit</a>
+                      <form method="post" action="{{ url_for('admin.product_delete', product_id=p.product_id) }}" class="d-inline"
+                            onsubmit="return confirm('Delete {{ p.brand_name }} {{ p.product_name }}?');">
+                        <button type="submit" class="btn btn-danger-trust btn-sm-trust">Delete</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="5" class="text-center text-dim-c py-4">No verified products yet.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

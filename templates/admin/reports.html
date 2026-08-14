@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% from "components/report_status.html" import status_pill %}
+
+{% block title %}Scam Reports - Admin - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container">
+    <div class="row g-4">
+      <div class="col-lg-3">
+        {% include "admin/_nav.html" %}
+      </div>
+      <div class="col-lg-9">
+        <h1 class="mb-1">Scam Reports</h1>
+        <p class="text-muted-c mb-4">Private reports submitted by users. Respond to each report to update its status and notify the reporter.</p>
+
+        <!-- Status summary (clickable filters) -->
+        {% set status_links = [
+          (stats.total, 'All', ''),
+          (stats['new'], 'New', 'new'),
+          (stats['under review'], 'Under Review', 'under review'),
+          (stats['resolved'], 'Resolved', 'resolved'),
+          (stats['rejected'], 'Rejected', 'rejected')
+        ] %}
+        <div class="d-flex flex-wrap gap-2 mb-4">
+          {% for num, label, val in status_links %}
+            <a class="btn {% if status == val %}btn-trust{% else %}btn-ghost{% endif %} btn-sm-trust"
+               href="{{ url_for('admin.reports', status=val or None, q=q, scam_type=scam_type) }}">
+              {{ label }} <span class="opacity-75">({{ num }})</span>
+            </a>
+          {% endfor %}
+        </div>
+
+        <!-- Search / filter toolbar -->
+        <form method="get" action="{{ url_for('admin.reports') }}" class="glass p-3 mb-4">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+              <label class="form-label-c" for="q">Search</label>
+              <input type="text" class="form-control form-control-trust" id="q" name="q"
+                     value="{{ q }}" placeholder="Report ID, email or user name">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label-c" for="status">Status</label>
+              <select class="form-select form-select-trust" id="status" name="status">
+                <option value="">All statuses</option>
+                {% for s, label in [('new', 'New'), ('under review', 'Under Review'), ('resolved', 'Resolved'), ('rejected', 'Rejected')] %}
+                  <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label-c" for="scam_type">Scam type</label>
+              <select class="form-select form-select-trust" id="scam_type" name="scam_type">
+                <option value="">All types</option>
+                {% for t in scam_types %}
+                  <option value="{{ t }}" {% if scam_type == t %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="mt-3 d-flex gap-2">
+            <button type="submit" class="btn btn-trust btn-sm-trust">&#128269; Apply filters</button>
+            <a class="btn btn-ghost btn-sm-trust" href="{{ url_for('admin.reports') }}">Clear</a>
+          </div>
+        </form>
+
+        <!-- Reports table -->
+        <div class="glass p-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">All reports <span class="text-dim-c small">(newest first)</span></h5>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-trust mb-0">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Reporter</th>
+                  <th>Phone</th>
+                  <th>Type</th>
+                  <th>Description</th>
+                  <th>Screenshot</th>
+                  <th>Date-Time</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in reports %}
+                  <tr>
+                    <td class="fw-bold">#{{ r.id }}</td>
+                    <td>
+                      <div class="fw-bold small">{{ r.reporter_name or 'Anonymous' }}</div>
+                      <div class="text-dim-c small">{{ r.reporter_display_email or 'No email' }}</div>
+                    </td>
+                    <td class="small">{{ r.contact_number or '-' }}</td>
+                    <td><span class="kbd-chip">{{ r.scam_type }}</span></td>
+                    <td class="small" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ r.description }}</td>
+                    <td>
+                      {% if r.screenshot_path %}
+                        <a href="{{ url_for('static', filename=r.screenshot_path) }}" target="_blank" class="btn btn-ghost btn-sm-trust">View</a>
+                      {% else %}
+                        <span class="text-dim-c small">-</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-dim-c small">{{ r.created_at.strftime('%d %b %Y, %H:%M') }}</td>
+                    <td>{{ status_pill(r.status) }}</td>
+                    <td>
+                      <button type="button" class="btn btn-trust btn-sm-trust" data-bs-toggle="modal"
+                              data-bs-target="#replyModal{{ r.id }}">Reply</button>
+                    </td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="9" class="text-center text-dim-c py-4">No reports match your filters.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Reply modals -->
+{% for r in reports %}
+<div class="modal fade" id="replyModal{{ r.id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content" style="background:#0b0d1c;border:1px solid var(--border);border-radius:var(--radius);">
+      <div class="modal-header" style="border-bottom-color:var(--border-soft);">
+        <h5 class="modal-title">Report #{{ r.id }} - {{ r.title }}</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <div class="detail-chip"><strong>Reporter:</strong> {{ r.reporter_name or 'Anonymous' }} ({{ r.reporter_display_email or 'no email' }})</div>
+            <div class="detail-chip"><strong>Contact:</strong> {{ r.contact_number or '-' }}</div>
+            <div class="detail-chip"><strong>Website:</strong> {{ r.website_url or '-' }}</div>
+            <div class="detail-chip"><strong>Scam date:</strong> {{ r.scam_date.strftime('%d %b %Y') if r.scam_date else '-' }}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="detail-chip"><strong>Type:</strong> <span class="kbd-chip">{{ r.scam_type }}</span></div>
+            <div class="detail-chip"><strong>Status:</strong> {{ status_pill(r.status) }}</div>
+            <div class="detail-chip"><strong>Submitted:</strong> {{ r.created_at.strftime('%d %b %Y, %H:%M') }}</div>
+            {% if r.screenshot_path %}
+              <div class="mt-2">
+                <a href="{{ url_for('static', filename=r.screenshot_path) }}" target="_blank">
+                  <img src="{{ url_for('static', filename=r.screenshot_path) }}" alt="Report screenshot"
+                       class="img-fluid rounded" style="max-height:140px;border:1px solid var(--border);">
+                </a>
+              </div>
+            {% endif %}
+          </div>
+          <div class="col-12">
+            <div class="detail-chip"><strong>Description:</strong></div>
+            <p class="text-muted-c mb-0 mt-1" style="white-space:pre-wrap;">{{ r.description }}</p>
+          </div>
+        </div>
+
+        {% if r.replies %}
+          <h6 class="mb-2">Reply history</h6>
+          <div class="mb-4">
+            {% for reply in r.replies %}
+              <div class="glass-soft p-3 mb-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="small fw-bold">{{ status_pill(reply.status_after) }}</span>
+                  <span class="text-dim-c small">{{ reply.created_at.strftime('%d %b %Y, %H:%M') }}</span>
+                </div>
+                <p class="small mb-0" style="white-space:pre-wrap;">{{ reply.admin_message }}</p>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <h6 class="mb-2">Reply to reporter</h6>
+        <form method="post" action="{{ url_for('admin.report_reply', report_id=r.id) }}">
+          <input type="hidden" name="q" value="{{ q }}">
+          <input type="hidden" name="status_filter" value="{{ status }}">
+          <input type="hidden" name="scam_type_filter" value="{{ scam_type }}">
+          <div class="mb-3">
+            <label class="form-label-c" for="msg{{ r.id }}">Your response</label>
+            <textarea class="form-control form-control-trust" id="msg{{ r.id }}" name="admin_message" rows="4"
+                      placeholder="Write the update you want the reporter to see and receive by email..." required></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label-c" for="st{{ r.id }}">Set status</label>
+            <select class="form-select form-select-trust" id="st{{ r.id }}" name="status" required>
+              {% for s, label in [('new', 'New'), ('under review', 'Under Review'), ('resolved', 'Resolved'), ('rejected', 'Rejected')] %}
+                <option value="{{ s }}" {% if r.status == s %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-trust">Save reply &amp; send email</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

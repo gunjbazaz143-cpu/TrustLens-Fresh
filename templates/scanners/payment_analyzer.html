@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Payment Analyzer - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container" style="max-width: 880px;">
+    <div class="text-center mb-4 reveal">
+      <span class="hero-badge mb-3">&#128176; PAYMENT ANALYZER</span>
+      <h1 class="mt-3">Is that payment proof <span class="text-gradient">genuine?</span></h1>
+      <p class="text-muted-c mx-auto" style="max-width:560px;">Refund and delivery scammers send edited "transaction confirmed" screenshots. We analyse metadata, image statistics, OCR and QR consistency to surface manipulation evidence &mdash; and report how much of the analysis we could actually trust.</p>
+    </div>
+
+    <div class="glass p-4 p-lg-5 mb-4 reveal">
+      <div class="drop-zone mb-3" id="dropZone">
+        <div class="dz-icon mb-2">&#128247;</div>
+        <p class="fw-bold mb-1">Click or drag a payment screenshot here</p>
+        <p class="text-dim-c small mb-2">PNG, JPG, JPEG, GIF, WEBP or BMP &mdash; up to 16 MB</p>
+        <span class="kbd-chip dz-filename">No file chosen</span>
+        <input type="file" id="file" accept="image/*" class="d-none" />
+      </div>
+      <button type="button" id="scanBtn" class="btn btn-trust w-100">Analyse Screenshot</button>
+      <div class="form-text text-dim-c mt-2">Screenshots edited in image tools often lose metadata &mdash; one of the strongest fraud signals we check.</div>
+    </div>
+
+    <div id="resultBox" class="result-hidden"></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("scanBtn").addEventListener("click", function () {
+  const btn = this;
+  const file = document.getElementById("file").files[0];
+  if (!file) {
+    TrustLens.showError(document.getElementById("resultBox"), "Please choose a payment screenshot first.");
+    return;
+  }
+  const fd = new FormData();
+  fd.append("screenshot", file);
+  TrustLens.loading(btn, "Analysing screenshot...");
+  TrustLens.apiPost("/api/scan-payment", fd, true)
+    .then(function (data) { renderResult(data); })
+    .catch(function (err) { TrustLens.showError(document.getElementById("resultBox"), err.message); })
+    .finally(function () { TrustLens.doneLoading(btn); });
+});
+
+function renderResult(data) {
+  const box = document.getElementById("resultBox");
+  box.classList.remove("result-hidden");
+  box.classList.add("glass", "p-4", "p-lg-5", "result-box");
+
+  const fields = (data.field_summary || []).map(function (f) {
+    const cls = f.detected ? "chip-detected" : "chip-missing";
+    const val = f.detected
+      ? '<span class="fld-ok">&#10003;</span> ' + __escapeHtml(f.value)
+      : '<span class="fld-miss">&#10007;</span> Not detected';
+    return '<span class="detail-chip ' + cls + '"><strong>' + __escapeHtml(f.name) + ':</strong> ' + val + "</span>";
+  }).join("");
+
+  const recClass =
+    data.result_type === "low" ? "rec-safe"
+      : data.result_type === "high" ? "rec-dangerous"
+      : "rec-warning";
+  const isUnverifiable = data.result_type === "unverifiable";
+
+  const banner =
+    '<div class="rec-box ' + recClass + ' mb-3">' +
+      '<div class="fw-bold">' + __escapeHtml(data.verdict || "") + '</div>' +
+      (isUnverifiable
+        ? '<div class="small mt-1">Insufficient readable evidence to assess risk. This is not a "safe" or "fraud" verdict.</div>'
+        : "") +
+    '</div>';
+
+  const caveat = (data.verification && data.verification.verified === false)
+    ? '<div class="small text-dim-c mb-3"><strong>&#8505; Not a transaction confirmation:</strong> ' +
+      __escapeHtml(data.verification.reason || "A screenshot cannot independently confirm that a real transaction occurred.") + "</div>"
+    : "";
+
+  const riskBlock = isUnverifiable
+    ? '<div class="mt-2 small text-dim-c">Risk assessment: <strong>Not determined</strong> &mdash; insufficient evidence</div>'
+    : '<div class="mt-2 small text-dim-c">Risk score: <strong>' + data.risk + '/100</strong> &middot; Fraud probability: <strong>' + data.fraud_probability + '%</strong></div>';
+
+  const conf = data.confidence || {};
+  const confBlock =
+    '<div class="mt-2 small text-dim-c">Analysis confidence: <strong>' +
+      (conf.overall != null ? conf.overall : "&mdash;") + '%</strong>' +
+      '<br>OCR: <strong>' + (conf.ocr != null ? conf.ocr : "&mdash;") + '%</strong>' +
+      ' &middot; Image authenticity: <strong>' + (conf.image_authenticity != null ? conf.image_authenticity : "&mdash;") + '%</strong></div>';
+
+  const evidenceHtml = (data.evidence || []).map(function (e) {
+    const cls = e.severity === "danger" ? "text-danger-c" : e.severity === "warning" ? "text-warn-c" : "text-dim-c";
+    const confPct = e.confidence != null ? e.confidence : 0;
+    const evidenceStr = e.evidence && e.evidence !== e.note ? " &middot; evidence: " + __escapeHtml(e.evidence) : "";
+    return "<li class='deduct-item'><span class='" + cls + "'>+" + e.points + "</span> " +
+      __escapeHtml(e.note) + '<span class="text-dim-c small">' + evidenceStr + " (" + confPct + "% conf)</span></li>";
+  }).join("");
+  const evidenceSection = evidenceHtml
+    ? '<div class="fw-bold small text-uppercase text-dim-c mb-1 mt-3">Evidence that raised risk</div>' +
+      '<ul class="deduct-list">' + evidenceHtml + '</ul>'
+    : "";
+
+  box.innerHTML =
+    banner + caveat +
+    '<div class="row g-4 align-items-center">' +
+      '<div class="col-md-4 text-center">' +
+        '<div class="gauge-wrap" id="gauge"></div>' +
+        '<div class="mt-3" id="statusPill"></div>' +
+        riskBlock + confBlock +
+      '</div>' +
+      '<div class="col-md-8">' +
+        '<h5 class="mb-3">Screenshot authenticity analysis</h5>' +
+        '<div class="fw-bold small text-uppercase text-dim-c mb-1">Detected fields</div>' +
+        '<div id="fieldChips" class="mb-2">' + fields + '</div>' +
+        '<div class="fw-bold small text-uppercase text-dim-c mb-1">Technical signals</div>' +
+        '<div id="detailChips" class="mb-3"></div>' +
+        '<div class="fw-bold small text-uppercase text-dim-c mb-2">Why this assessment</div>' +
+        '<ul class="reason-list" id="reasons"></ul>' +
+        evidenceSection +
+        '<p class="text-dim-c small mt-3 mb-0">Processing time: ' + data.processing_time_ms + ' ms</p>' +
+      '</div>' +
+    '</div>';
+
+  TrustLens.renderGauge(document.getElementById("gauge"), data.score);
+  document.getElementById("statusPill").innerHTML = TrustLens.renderStatusPill(data.status);
+  TrustLens.renderReasons(document.getElementById("reasons"), data.reasons);
+  TrustLens.renderDetails(document.getElementById("detailChips"), data.flags);
+  TrustLens.showResult(box, data);
+}
+</script>
+{% endblock %}

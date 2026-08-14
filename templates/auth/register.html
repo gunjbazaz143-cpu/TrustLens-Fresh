@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Create Account - TrustLens{% endblock %}
+
+{% block content %}
+<section class="auth-shell">
+  <div class="auth-card glass reveal">
+    <div class="text-center mb-4">
+      <div class="brand-mark mx-auto mb-3" style="width:52px;height:52px;font-size:1.4rem;">&#128274;</div>
+      <h2 class="mb-1">Create your account</h2>
+      <p class="text-muted-c small mb-0">Free forever. Start verifying in seconds.</p>
+    </div>
+    <form method="post" action="{{ url_for('auth.register') }}">
+      <div class="mb-3">
+        <label class="form-label-c" for="full_name">Full name</label>
+        <input type="text" class="form-control form-control-trust" id="full_name" name="full_name" placeholder="Jane Doe" required autofocus>
+      </div>
+      <div class="mb-3">
+        <label class="form-label-c" for="email">Email address</label>
+        <input type="email" class="form-control form-control-trust" id="email" name="email" placeholder="you@example.com" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label-c" for="password">Password</label>
+        <input type="password" class="form-control form-control-trust" id="password" name="password" placeholder="Min 8 characters" required minlength="8">
+      </div>
+      <div class="mb-4">
+        <label class="form-label-c" for="confirm_password">Confirm password</label>
+        <input type="password" class="form-control form-control-trust" id="confirm_password" name="confirm_password" placeholder="Repeat password" required minlength="8">
+      </div>
+      <button type="submit" class="btn btn-trust w-100">Create Account</button>
+    </form>
+    <p class="text-center text-muted-c small mt-4 mb-0">
+      Already have an account? <a href="{{ url_for('auth.login') }}" class="fw-bold">Sign in</a>
+    </p>
+  </div>
+</section>
+{% endblock %}

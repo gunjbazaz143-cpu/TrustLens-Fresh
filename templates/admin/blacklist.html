@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Blacklist - Admin - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container">
+    <div class="row g-4">
+      <div class="col-lg-3">
+        {% include "admin/_nav.html" %}
+      </div>
+      <div class="col-lg-9">
+        <h1 class="mb-4">Domain Blacklist</h1>
+
+        <div class="glass p-4 mb-4">
+          <form method="post" action="{{ url_for('admin.blacklist_add') }}" class="row g-2 align-items-end">
+            <div class="col-md-4">
+              <label class="form-label-c" for="domain">Domain</label>
+              <input type="text" class="form-control form-control-trust" id="domain" name="domain" placeholder="scam-site.click" required>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label-c" for="reason">Reason</label>
+              <input type="text" class="form-control form-control-trust" id="reason" name="reason" placeholder="Why is this domain dangerous?">
+            </div>
+            <div class="col-md-3">
+              <button type="submit" class="btn btn-danger-trust w-100">&#128683; Add to Blacklist</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="glass p-4">
+          <div class="table-responsive">
+            <table class="table table-trust mb-0">
+              <thead>
+                <tr><th>Domain</th><th>Reason</th><th>Added</th><th></th></tr>
+              </thead>
+              <tbody>
+                {% for d in domains %}
+                  <tr>
+                    <td class="fw-bold" style="color:var(--red);">{{ d.domain }}</td>
+                    <td class="small text-muted-c">{{ d.reason or '&mdash;'|safe }}</td>
+                    <td class="text-dim-c small">{{ d.created_at.strftime('%d %b %Y') }}</td>
+                    <td class="text-end">
+                      <a class="btn btn-ghost btn-sm-trust" href="{{ url_for('admin.blacklist_delete', domain_id=d.id) }}" onclick="return confirm('Remove {{ d.domain }} from blacklist?');">Remove</a>
+                    </td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="4" class="text-center text-dim-c py-4">Blacklist is empty.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

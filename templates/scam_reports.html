@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Report a Scam - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container">
+    <div class="text-center mb-5 reveal" style="max-width:640px;margin-left:auto;margin-right:auto;">
+      <span class="hero-badge mb-3">&#9888; REPORT A SCAM</span>
+      <h1 class="mt-3">Share your experience, <span class="text-gradient">confidentially</span></h1>
+      <p class="text-muted-c mx-auto">Your report goes directly to the TrustLens safety team. It is <strong>never published</strong> and only you and our admins can see it. When an admin updates your report you will get an email, and the update appears in your dashboard.</p>
+      <button type="button" class="btn btn-danger-trust mt-3" data-bs-toggle="modal" data-bs-target="#reportModal">&#9998; Submit a Report</button>
+    </div>
+
+    <div class="row g-4 justify-content-center reveal reveal-delay-1" style="max-width:820px;margin-left:auto;margin-right:auto;">
+      <div class="col-md-4">
+        <div class="glass-soft p-4 h-100 text-center">
+          <div class="fs-2 mb-2">&#128274;</div>
+          <h6 class="mb-1">Private by default</h6>
+          <p class="text-dim-c small mb-0">Reports are only visible to you and the TrustLens admin team.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="glass-soft p-4 h-100 text-center">
+          <div class="fs-2 mb-2">&#128231;</div>
+          <h6 class="mb-1">Email updates</h6>
+          <p class="text-dim-c small mb-0">Get notified whenever an admin replies to your report.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="glass-soft p-4 h-100 text-center">
+          <div class="fs-2 mb-2">&#128269;</div>
+          <h6 class="mb-1">Reviewed by humans</h6>
+          <p class="text-dim-c small mb-0">A TrustLens admin reviews every submission and responds directly.</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="submitSuccess" class="result-hidden mb-5" style="max-width:640px;margin-left:auto;margin-right:auto;"></div>
+  </div>
+</section>
+
+<!-- Report modal -->
+<div class="modal fade" id="reportModal" tabindex="-1" aria-labelledby="reportModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content" style="background:#0b0d1c;border:1px solid var(--border);border-radius:var(--radius);">
+      <div class="modal-header" style="border-bottom-color:var(--border-soft);">
+        <h5 class="modal-title" id="reportModalLabel">Submit a scam report</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="reportForm">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label-c" for="r_title">Report title</label>
+              <input type="text" class="form-control form-control-trust" id="r_title" name="title" placeholder="Fake courier delivery scam" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-c" for="r_type">Scam type</label>
+              <select class="form-select form-select-trust" id="r_type" name="scam_type" required>
+                <option value="">Choose type...</option>
+                <option>Phishing</option>
+                <option>Fake Job Offer</option>
+                <option>QR Scam</option>
+                <option>WhatsApp Scam</option>
+                <option>Payment Fraud</option>
+                <option>Courier / KYC</option>
+                <option>Lottery / Prize</option>
+                <option>Investment Fraud</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label-c" for="r_desc">Description</label>
+              <textarea class="form-control form-control-trust" id="r_desc" name="description" rows="4" placeholder="What happened? How were you approached?" required></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-c" for="r_email">Your email <span class="text-dim-c">(for status updates)</span></label>
+              <input type="email" class="form-control form-control-trust" id="r_email" name="reporter_email" placeholder="you@example.com" {% if current_user.is_authenticated %}value="{{ current_user.email }}"{% endif %}>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-c" for="r_contact">Scammer contact</label>
+              <input type="text" class="form-control form-control-trust" id="r_contact" name="contact_number" placeholder="Phone / email (optional)">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-c" for="r_url">Website / link</label>
+              <input type="url" class="form-control form-control-trust" id="r_url" name="website_url" placeholder="https://... (optional)">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-c" for="r_date">Date of scam</label>
+              <input type="date" class="form-control form-control-trust" id="r_date" name="scam_date">
+            </div>
+            <div class="col-12">
+              <label class="form-label-c" for="r_shot">Screenshot (optional)</label>
+              <input type="file" class="form-control form-control-trust" id="r_shot" name="screenshot" accept="image/*">
+            </div>
+            <div class="col-12">
+              <div class="alert alert-trust alert-info py-2 mb-0 small" role="alert">
+                Your report stays private. Only you and the TrustLens admin team can see it.
+              </div>
+            </div>
+            <div class="col-12 d-flex justify-content-end gap-2">
+              <button type="button" class="btn btn-ghost" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-danger-trust">Submit Report</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("reportForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const btn = this.querySelector("button[type=submit]");
+  TrustLens.loading(btn, "Submitting...");
+  TrustLens.apiPost("/api/submit-report", new FormData(this), true)
+    .then(function (data) {
+      const modal = bootstrap.Modal.getInstance(document.getElementById("reportModal"));
+      if (modal) modal.hide();
+      const box = document.getElementById("submitSuccess");
+      box.innerHTML =
+        '<div class="glass p-4 text-center">' +
+        '<div class="fs-1 mb-2">&#9989;</div>' +
+        '<h5 class="mb-2">Report submitted</h5>' +
+        '<p class="text-muted-c mb-0">Thank you. A TrustLens admin will review it and reply by email.</p></div>';
+      box.classList.remove("result-hidden");
+      box.scrollIntoView({ behavior: "smooth", block: "center" });
+      this.reset();
+    })
+    .catch(function (err) { alert(err.message); })
+    .finally(function () { TrustLens.doneLoading(btn); });
+});
+</script>
+{% endblock %}
