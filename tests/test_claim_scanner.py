@@ -13,7 +13,9 @@ Behavioural guarantees exercised here:
   C1  Supported fact (smoking -> cancer) scores safe
   C2  False claim (bleach cures COVID-19) is surfaced as the most serious
       finding and scores dangerous
-  C3  Misleading claims (acne in 24h, guaranteed returns) score warning
+  C3  Misleading claims (acne in 24h) score warning in the NORMAL band; claims
+      carrying scam-risk indicators (guaranteed returns, double your money)
+      are forced to HIGH RISK (20-30)
   C4  Unsupported claims (cures diabetes, herbal cure) score warning
   C5  Unverifiable claims are honestly "could not verify" - never "false"
   C6  negation is honoured ("no cure for diabetes" -> Supported)
@@ -22,6 +24,8 @@ Behavioural guarantees exercised here:
   C9  medical / financial claims carry explicit caution disclaimers
   C10 determinism: same claim in -> identical result out
   C11 structural invariants on every payload (no fabricated URLs in sources)
+  SPEC spec trust bands: guaranteed-profit and OTP/PIN claims -> HIGH 20-30,
+       a benign savings claim -> LOW 70-90
 """
 
 import sys
@@ -33,7 +37,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from services.claim_scanner import (  # noqa: E402
     MAX_CLAIM_CHARS,
     KB_ENTRIES,
-    VERDICT_SCORE,
+    RISK_INDICATOR_THRESHOLD,
+    calculate_claim_trust_score,
+    detect_risk_indicators,
     scan_claim,
 )
 
@@ -44,9 +50,10 @@ ALLOWED_CATEGORIES = {"General", "Health/Medical", "Finance/Investment",
                       "Product/Beauty", "Jobs/Employment", "Technology", "Education"}
 
 CLAIM_PAYLOAD_KEYS = [
-    "score", "status", "verdict", "confidence", "category", "explanation",
-    "evidence", "sources", "limitations", "caution", "reasons", "match",
-    "processing_time_ms",
+    "score", "status", "verdict", "confidence", "category", "risk_level",
+    "risk_label", "risk_indicators", "recommended_action",
+    "verification_suggestions", "explanation", "evidence", "sources",
+    "limitations", "caution", "reasons", "match", "processing_time_ms",
 ]
 
 
@@ -63,10 +70,17 @@ def structural_issues(payload: dict) -> list:
     if verdict is not None:
         if verdict not in ALLOWED_VERDICTS:
             issues.append(f"bad verdict {verdict!r}")
-        exp_score, exp_status = VERDICT_SCORE[verdict]
-        if payload["score"] != exp_score or payload["status"] != exp_status:
-            issues.append(f"score/status {payload['score']}/{payload['status']} "
-                          f"!= {exp_score}/{exp_status} for {verdict}")
+        # the score must sit in the display band for its status:
+        # HIGH RISK 20-30, NORMAL 70-90
+        if payload["status"] == "dangerous":
+            if not (20 <= payload["score"] <= 30):
+                issues.append(f"dangerous score {payload['score']} outside 20-30")
+        elif not (70 <= payload["score"] <= 90):
+            issues.append(f"normal score {payload['score']} outside 70-90")
+        if payload["risk_level"] not in ("high", "low"):
+            issues.append(f"bad risk_level {payload['risk_level']!r}")
+        if payload["risk_label"] != (("HIGH RISK" if payload["risk_level"] == "high" else "LOW RISK")):
+            issues.append(f"bad risk_label {payload['risk_label']!r}")
     if payload.get("confidence") not in ALLOWED_CONFIDENCE and payload.get("confidence") is not None:
         issues.append(f"bad confidence {payload['confidence']!r}")
     if payload["category"] not in ALLOWED_CATEGORIES:
@@ -114,8 +128,8 @@ def test_false_claims():
             failures.append(f"C2 {claim[:30]!r}: {payload['verdict']} != False")
         if payload["status"] != "dangerous":
             failures.append(f"C2 {claim[:30]!r}: status {payload['status']} != dangerous")
-        if payload["score"] != 15:
-            failures.append(f"C2 {claim[:30]!r}: score {payload['score']} != 15")
+        if payload["score"] != 25:
+            failures.append(f"C2 {claim[:30]!r}: score {payload['score']} != 25")
         if payload["match"] != "knowledge_base":
             failures.append(f"C2 {claim[:30]!r}: match {payload['match']} != knowledge_base")
     # the bleach+covid pair must surface the False finding, not the milder one
@@ -129,20 +143,34 @@ def test_false_claims():
 
 def test_misleading_claims():
     failures = []
-    cases = {
+    # plain marketing exaggeration stays in the NORMAL band (70-90 / warning)
+    warning_cases = {
         "This cream removes acne in 24 hours.": ("Misleading", "Medium"),
-        "This investment gives guaranteed 30% returns.": ("Misleading", "High"),
-        "Double your money in 7 days with this scheme.": ("Unsupported", "High"),
         "This juice detoxifies your body overnight.": ("Misleading", "Medium"),
     }
-    for claim, (expect_verdict, expect_conf) in cases.items():
+    for claim, (expect_verdict, expect_conf) in warning_cases.items():
         payload = scan_claim(claim)
         if payload["verdict"] != expect_verdict:
             failures.append(f"C3/C4 {claim[:30]!r}: {payload['verdict']} != {expect_verdict}")
         if payload["confidence"] != expect_conf:
             failures.append(f"C3/C4 {claim[:30]!r}: conf {payload['confidence']} != {expect_conf}")
-        if payload["status"] != "warning":
-            failures.append(f"C3/C4 {claim[:30]!r}: status {payload['status']} != warning")
+        if payload["status"] != "warning" or not (70 <= payload["score"] <= 90):
+            failures.append(f"C3/C4 {claim[:30]!r}: status/score {payload['status']}/{payload['score']} not 70-90/warning")
+    # scam-signal claims are forced into the HIGH RISK band (20-30 / dangerous)
+    high_cases = {
+        "This investment gives guaranteed 30% returns.": ("Misleading", "High"),
+        "Double your money in 7 days with this scheme.": ("Unsupported", "High"),
+    }
+    for claim, (expect_verdict, expect_conf) in high_cases.items():
+        payload = scan_claim(claim)
+        if payload["verdict"] != expect_verdict:
+            failures.append(f"C3/C4 {claim[:30]!r}: {payload['verdict']} != {expect_verdict}")
+        if payload["confidence"] != expect_conf:
+            failures.append(f"C3/C4 {claim[:30]!r}: conf {payload['confidence']} != {expect_conf}")
+        if payload["status"] != "dangerous" or not (20 <= payload["score"] <= 30):
+            failures.append(f"C3/C4 {claim[:30]!r}: status/score {payload['status']}/{payload['score']} not 20-30/dangerous")
+        if payload["risk_label"] != "HIGH RISK":
+            failures.append(f"C3/C4 {claim[:30]!r}: risk_label {payload['risk_label']}")
     if not failures:
         print("C3/C4 misleading/unsupported claims passed.")
     return failures
@@ -248,6 +276,42 @@ def test_determinism():
     return failures
 
 
+def test_spec_trust_bands():
+    """Spec cases: HIGH RISK 20-30 / LOW RISK 70-90."""
+    failures = []
+    cases = [
+        ("Invest \u20b95,000 today and get guaranteed \u20b950,000 profit tomorrow.",
+         (20, 30), "HIGH RISK"),
+        ("Saving money regularly can help build an emergency fund.",
+         (70, 90), "LOW RISK"),
+        ("Send your OTP and bank PIN to receive your prize.",
+         (20, 30), "HIGH RISK"),
+    ]
+    for claim, (lo, hi), label in cases:
+        payload = scan_claim(claim)
+        if not (lo <= payload["score"] <= hi):
+            failures.append(f"SPEC {claim[:30]!r}: score {payload['score']} not in {lo}-{hi}")
+        if payload["risk_label"] != label:
+            failures.append(f"SPEC {claim[:30]!r}: risk_label {payload['risk_label']} != {label}")
+        if payload["risk_level"] not in ("high", "low"):
+            failures.append(f"SPEC {claim[:30]!r}: bad risk_level {payload['risk_level']}")
+        if not payload.get("recommended_action"):
+            failures.append(f"SPEC {claim[:30]!r}: missing recommended_action")
+        if payload.get("verification_suggestions") is None:
+            failures.append(f"SPEC {claim[:30]!r}: missing verification_suggestions")
+    # the reusable scoring function is deterministic and threshold-based
+    for claim, expect_high in (("You won a prize, send your OTP.", True),
+                               ("Saving monthly builds savings.", False)):
+        info = calculate_claim_trust_score(claim.lower(), "Unverifiable", "General")
+        if (info["risk_level"] == "high") != expect_high:
+            failures.append(f"SPEC fn {claim[:30]!r}: risk_level {info['risk_level']}")
+    if detect_risk_indicators("nothing suspicious here") != []:
+        failures.append("SPEC fn: clean text matched no indicators")
+    if not failures:
+        print("SPEC claim trust bands passed (HIGH 20-30 / LOW 70-90).")
+    return failures
+
+
 def test_structural_all():
     failures = []
     claims = [
@@ -289,7 +353,7 @@ def main():
         test_supported_claims, test_false_claims, test_misleading_claims,
         test_unverifiable_honesty, test_negation_variants,
         test_empty_and_short, test_long_claim, test_cautions,
-        test_determinism, test_structural_all,
+        test_determinism, test_spec_trust_bands, test_structural_all,
     ]
     failures = []
     for fn in check_names:

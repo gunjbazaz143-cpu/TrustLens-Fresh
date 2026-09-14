@@ -27,7 +27,8 @@
                 <tr>
                   <th>Product</th>
                   <th>Category</th>
-                  <th>Consumption</th>
+                  <th>Identifiers</th>
+                  <th>Status</th>
                   <th class="text-center">Ingredients</th>
                   <th class="text-end"></th>
                 </tr>
@@ -39,7 +40,7 @@
                       <div class="fw-bold">{{ p.brand_name }} {{ p.product_name }}</div>
                       <div class="text-dim-c small">
                         {% if p.product_variant %}{{ p.product_variant }} &middot;{% endif %}
-                        {{ p.manufacturer or 'Manufacturer n/a' }} &middot; {{ p.market or 'Market n/a' }}
+                        {{ p.manufacturer or 'Manufacturer n/a' }} &middot; {{ p.market or p.country or 'Market n/a' }}
                       </div>
                       <div class="text-dim-c small">{{ p.product_id }}</div>
                     </td>
@@ -47,7 +48,21 @@
                       {{ p.category or '&mdash;'|safe }}
                       {% if p.subcategory %}<br><span class="text-dim-c">{{ p.subcategory }}</span>{% endif %}
                     </td>
-                    <td class="small">{{ p.consumption_status or 'Unknown' }}</td>
+                    <td class="small">
+                      {% if p.barcode %}<span class="text-dim-c">Barcode:</span> {{ p.barcode }}<br>{% endif %}
+                      {% if p.gtin %}<span class="text-dim-c">GTIN:</span> {{ p.gtin }}<br>{% endif %}
+                      {% if p.sku %}<span class="text-dim-c">SKU:</span> {{ p.sku }}<br>{% endif %}
+                      {% if p.model_number %}<span class="text-dim-c">Model:</span> {{ p.model_number }}<br>{% endif %}
+                      {% if not p.barcode and not p.gtin and not p.sku and not p.model_number %}&mdash;{% endif %}
+                    </td>
+                    <td class="small">
+                      {% if p.trust_score is not none %}
+                        <span class="fw-bold" style="color: {% if p.trust_score >= 70 %}var(--safe-color, #22c55e){% elif p.trust_score >= 40 %}var(--warn-color, #f59e0b){% else %}var(--danger-color, #ef4444){% endif %};">{{ p.trust_score }}/100</span>
+                      {% endif %}
+                      {% if p.verification_status %}
+                        <br><span class="text-dim-c">{{ p.verification_status.replace('_', ' ').title() }}</span>
+                      {% endif %}
+                    </td>
                     <td class="text-center">{{ p.ingredient_count }}</td>
                     <td class="text-end text-nowrap">
                       <a class="btn btn-ghost btn-sm-trust" href="{{ url_for('admin.product_edit', product_id=p.product_id) }}">Edit</a>
@@ -58,7 +73,7 @@
                     </td>
                   </tr>
                 {% else %}
-                  <tr><td colspan="5" class="text-center text-dim-c py-4">No verified products yet.</td></tr>
+                  <tr><td colspan="6" class="text-center text-dim-c py-4">No verified products yet.</td></tr>
                 {% endfor %}
               </tbody>
             </table>

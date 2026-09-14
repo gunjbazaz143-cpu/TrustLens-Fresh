@@ -37,6 +37,13 @@
                 </select>
               </div>
               <div class="col-md-4">
+                <label class="form-label-c" for="ingredient_category">Domain</label>
+                <select class="form-select form-control-trust" id="ingredient_category" name="ingredient_category">
+                  <option value="">--</option>
+                  {% for d in ingredient_domains %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
                 <label class="form-label-c" for="risk_category">Risk category</label>
                 <select class="form-select form-control-trust" id="risk_category" name="risk_category">
                   {% for c in risk_categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
@@ -48,6 +55,11 @@
                   <option value="">--</option>
                   {% for e in evidence_levels %}<option value="{{ e }}">{{ e }}</option>{% endfor %}
                 </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label-c" for="score_impact">Score impact</label>
+                <input type="number" step="0.1" class="form-control form-control-trust" id="score_impact" name="score_impact" placeholder="e.g. -3.0 or +5.0">
+                <div class="form-text">Negative = concern, positive = benefit.</div>
               </div>
               <div class="col-md-6">
                 <label class="form-label-c" for="common_function">Common function</label>
@@ -96,7 +108,7 @@
           <div class="table-responsive">
             <table class="table table-trust mb-0 align-middle">
               <thead>
-                <tr><th>Ingredient</th><th>Type</th><th>Risk</th><th>Evidence</th><th>Used by</th><th class="text-end"></th></tr>
+                <tr><th>Ingredient</th><th>Type</th><th>Domain</th><th>Risk</th><th>Evidence</th><th>Impact</th><th>Used by</th><th class="text-end"></th></tr>
               </thead>
               <tbody>
                 {% for r in rows %}
@@ -106,10 +118,12 @@
                       <div class="text-dim-c small">{{ r.ingredient_id }}</div>
                     </td>
                     <td class="small">{{ r.ingredient_type or '&mdash;'|safe }}</td>
+                    <td class="small">{{ r.category or '&mdash;'|safe }}</td>
                     <td class="small">
                       <span class="cat-chip {{ 'cat-low' if r.risk_category == 'low' else 'cat-moderate' if r.risk_category == 'moderate' else 'cat-higher' if r.risk_category == 'higher' else 'cat-unknown' }}">{{ r.risk_category or 'unknown' }}</span>
                     </td>
                     <td class="small">{{ r.evidence_level or '&mdash;'|safe }}</td>
+                    <td class="small">{% if r.score_impact is not none %}{{ '%+.1f'|format(r.score_impact) }}{% else %}&mdash;{% endif %}</td>
                     <td class="small">{{ r.product_links_count or 0 }}</td>
                     <td class="text-end">
                       <form method="post" action="{{ url_for('admin.ingredient_delete', ingredient_id=r.ingredient_id) }}" class="d-inline"
@@ -119,7 +133,7 @@
                     </td>
                   </tr>
                 {% else %}
-                  <tr><td colspan="6" class="text-center text-dim-c py-4">No ingredients in the reference database.</td></tr>
+                  <tr><td colspan="8" class="text-center text-dim-c py-4">No ingredients in the reference database.</td></tr>
                 {% endfor %}
               </tbody>
             </table>

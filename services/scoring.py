@@ -34,6 +34,30 @@ def classify(score: int) -> str:
     return "dangerous"
 
 
+# Display bands per status. Every scanner clamps its evidence-derived score
+# into the band for its status so the gauge, pill and verdict agree:
+#   dangerous (HIGH RISK)  20-30
+#   warning   (MODERATE)   50-60
+#   safe      (LOW RISK)   80-95
+STATUS_BANDS = {
+    "safe": (80, 95),
+    "warning": (50, 60),
+    "moderate": (50, 60),
+    "dangerous": (20, 30),
+}
+
+
+def remap_score_to_band(score: int, status: str) -> int:
+    """Clamp a 0-100 score into the display band for its status.
+
+    Scores already inside their band are returned unchanged; out-of-band scores
+    are clamped to the band edge. The mapping is deterministic and never moves a
+    score across a status boundary.
+    """
+    lo, hi = STATUS_BANDS.get(status, (40, 60))
+    return max(lo, min(hi, max(0, min(100, score))))
+
+
 class ScoreBuilder:
     """
     Accumulates penalties / notes and produces a final ScanResult.

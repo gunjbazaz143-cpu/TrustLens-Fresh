@@ -79,16 +79,49 @@ function renderResult(data) {
 
   const sections = [];
 
-  sections.push('<div class="text-center mb-3">' +
-    '<span class="verdict-pill ' + verdictClass(data.verdict) + '">' + __escapeHtml(data.verdict || "No verdict") + "</span>" +
-    '<div class="mt-3 d-flex flex-wrap justify-content-center gap-2">' +
-      '<span class="detail-chip"><strong>Confidence:</strong> ' + __escapeHtml(data.confidence || "n/a") + "</span>" +
-      '<span class="detail-chip"><strong>Category:</strong> ' + __escapeHtml(data.category || "General") + "</span>" +
-    "</div></div>");
+  sections.push('<div class="row g-4 align-items-center mb-2">' +
+    '<div class="col-md-4 text-center">' +
+      '<div class="gauge-wrap" id="gauge"></div>' +
+      '<div class="mt-3 text-center" id="statusPill"></div>' +
+    '</div>' +
+    '<div class="col-md-8">' +
+      '<div class="text-center text-md-start mb-3">' +
+        '<span class="verdict-pill ' + verdictClass(data.verdict) + '">' + __escapeHtml(data.verdict || "No verdict") + "</span>" +
+      '</div>' +
+      '<div class="d-flex flex-wrap justify-content-center text-md-start gap-2">' +
+        '<span class="detail-chip"><strong>Confidence:</strong> ' + __escapeHtml(data.confidence || "n/a") + "</span>" +
+        '<span class="detail-chip"><strong>Category:</strong> ' + __escapeHtml(data.category || "General") + "</span>" +
+      '</div>' +
+    '</div>' +
+  '</div>');
 
   if (data.explanation) {
     sections.push('<div class="mt-3"><div class="fw-bold small text-uppercase text-dim-c mb-2">Why</div>' +
       '<p class="mb-0">' + __escapeHtml(data.explanation) + "</p></div>");
+  }
+
+  if (data.risk_indicators && data.risk_indicators.length) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase mb-2" style="color:var(--red)">Risk indicators detected</div>' +
+      '<ul class="reason-list">' + data.risk_indicators.map(function (r) {
+        return '<li class="r-danger"><span class="dot"></span><span><strong>' + __escapeHtml(r.label) + "</strong>" +
+          (r.why ? '<div class="small text-dim-c">' + __escapeHtml(r.why) + "</div>" : "") + "</span></li>";
+      }).join("") + "</ul></div>");
+  }
+
+  if (data.recommended_action) {
+    const high = data.risk_level === "high";
+    sections.push('<div class="mt-4" style="background:rgba(' + (high ? "255,95,109" : "45,212,167") +
+      ',0.08);border:1px solid rgba(' + (high ? "255,95,109" : "45,212,167") +
+      ',0.30);border-radius:10px;padding:0.8rem 1rem;">' +
+      '<span class="fw-bold" style="color:' + (high ? "var(--red)" : "var(--green)") + '">&#9888; Recommended action</span>' +
+      '<p class="small mb-0 mt-1" style="color:var(--text-dim)">' + __escapeHtml(data.recommended_action) + "</p></div>");
+  }
+
+  if (data.verification_suggestions && data.verification_suggestions.length) {
+    sections.push('<div class="mt-4"><div class="fw-bold small text-uppercase text-dim-c mb-2">How to verify</div>' +
+      '<ul class="reason-list">' + data.verification_suggestions.map(function (v) {
+        return '<li class="r-info"><span class="dot"></span><span>' + __escapeHtml(v) + "</span></li>";
+      }).join("") + "</ul></div>");
   }
 
   if (data.evidence && data.evidence.length) {
@@ -128,6 +161,15 @@ function renderResult(data) {
     '<h5 class="mb-2">Claim analysis</h5>' +
     sections.join("") +
     '<p class="text-dim-c small mt-3 mb-0">Processing time: ' + data.processing_time_ms + " ms</p>";
+
+  if (data.verdict && typeof data.score === "number") {
+    TrustLens.renderGauge(document.getElementById("gauge"), data.score);
+    const cls = data.risk_level === "high" ? "badge-dangerous" : "badge-safe";
+    const label = data.risk_label || (data.risk_level === "high" ? "HIGH RISK" : "LOW RISK");
+    document.getElementById("statusPill").innerHTML =
+      '<div><span class="status-pill ' + cls + '">' + __escapeHtml(label) + "</span></div>" +
+      '<div class="mt-2 text-dim-c small fw-bold">Trust Score ' + data.score + "/100</div>";
+  }
 
   TrustLens.showResult(box, data);
 }

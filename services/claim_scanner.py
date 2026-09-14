@@ -25,6 +25,7 @@ import re
 import time
 
 from services.logger import get_logger
+from services.scoring import classify
 
 logger = get_logger(__name__)
 
@@ -653,15 +654,199 @@ def _match_entry(low: str, category: str):
 
 
 # ---- Verdict -> score/status mapping ---------------------------------------- #
+# Scores sit in the NORMAL display band (70-90) unless a False verdict or a
+# scam-risk indicator forces the HIGH RISK band (20-30). The band scores and
+# the risk-indicator logic below are the single place to tune the trust score.
 VERDICT_SCORE = {
     "Supported": (90, "safe"),
-    "Mostly supported": (75, "safe"),
-    "Misleading": (45, "warning"),
-    "Unsupported": (30, "warning"),
-    "False": (15, "dangerous"),
-    "Unverifiable": (50, "warning"),
-    "Insufficient evidence": (50, "warning"),
+    "Mostly supported": (85, "safe"),
+    "Unverifiable": (78, "warning"),
+    "Insufficient evidence": (75, "warning"),
+    "Misleading": (72, "warning"),
+    "Unsupported": (72, "warning"),
+    "False": (25, "dangerous"),
 }
+
+# ---- Scam / phishing risk indicators --------------------------------------- #
+# Patterns are matched (substring) on the lowercased claim text. A weighted
+# total at or above RISK_INDICATOR_THRESHOLD forces the HIGH RISK band (20-30)
+# regardless of the verdict. Weights and the threshold are the tunable knobs.
+RISK_INDICATOR_THRESHOLD = 3
+
+RISK_INDICATORS = [
+    {
+        "id": "credentials",
+        "weight": 3,
+        "label": "Requests OTP / PIN / banking credentials",
+        "why": "Legitimate organizations never ask for your OTP, PIN, CVV or "
+               "banking password. Sharing these hands over control of your account.",
+        "patterns": [
+            "otp", "one time password", "bank pin", "pin number", "atm pin",
+            "upi pin", "cvv", "cvv2", "card number", "card details",
+            "banking password", "net banking", "account number", "aadhaar",
+            "pan card", "card pin", "otp number", "bank password",
+        ],
+    },
+    {
+        "id": "advance_fee",
+        "weight": 3,
+        "label": "Asks you to pay first / advance fee",
+        "why": "Demanding a fee before delivering a prize, job, loan or refund "
+               "is the classic advance-fee scam pattern.",
+        "patterns": [
+            "pay first", "pay a fee", "pay the fee", "registration fee",
+            "processing fee", "joining fee", "advance payment", "security deposit",
+            "send money", "transfer money", "money to release", "deposit to",
+            "pay to receive", "fee to claim", "to receive your", "to claim your",
+        ],
+    },
+    {
+        "id": "guaranteed_returns",
+        "weight": 3,
+        "label": "Guaranteed / risk-free returns",
+        "why": "Investment returns are never guaranteed; guaranteed or risk-free "
+               "return promises are a known fraud warning sign.",
+        "patterns": [
+            "guaranteed", "assured returns", "assured profit", "guarantee returns",
+            "guaranteed return", "guaranteed profit", "guaranteed income",
+            "guaranteed payout", "risk free", "risk-free", "no risk", "no loss",
+            "100% profit", "certain profit", "fixed returns", "fixed profit",
+        ],
+    },
+    {
+        "id": "get_rich_quick",
+        "weight": 3,
+        "label": "Get-rich-quick / unrealistic profit promise",
+        "why": "Doubling money or huge profits in days has no legitimate basis "
+               "and is a hallmark of Ponzi and investment fraud.",
+        "patterns": [
+            "double your money", "double money", "triple your money", "get rich",
+            "get rich quick", "make money fast", "easy money", "earn lakhs",
+            "earn crores", "profit tomorrow", "money tomorrow", "profit in a day",
+            "profit in 24 hours", "profit overnight", "overnight profit",
+            "multiply your money",
+        ],
+    },
+    {
+        "id": "prize_lure",
+        "weight": 2,
+        "label": "Prize / lottery lure",
+        "why": "Official prizes are never announced by asking you to act fast or "
+               "share details - unexpected prize messages are a common scam bait.",
+        "patterns": [
+            "you have won", "you won", "congratulations", "lottery", "win prize",
+            "won a prize", "claim your prize", "receive your prize", "prize money",
+            "lucky winner", "selected for a prize", "gift voucher", "cash prize",
+        ],
+    },
+    {
+        "id": "authority",
+        "weight": 2,
+        "label": "Impersonates an official body",
+        "why": "Scammers pretend to be banks, government offices or regulators. "
+               "Real officials do not solicit payments or credentials by message.",
+        "patterns": [
+            "tax refund", "income tax", "government scheme", "ministry",
+            "bank official", "bank manager", "rbi", "sebi", "police", "court",
+            "official letter", "official notice", "lottery department",
+            "income tax department", "customs",
+        ],
+    },
+    {
+        "id": "urgency",
+        "weight": 1,
+        "label": "Urgency / deadline pressure",
+        "why": "Creating artificial urgency stops you from thinking it through - "
+               "a standard manipulation tactic in scams.",
+        "patterns": [
+            "act now", "act today", "limited time", "only today", "today only",
+            "expires today", "expires soon", "last chance", "hurry", "urgent",
+            "immediately", "within 24 hours", "within 48 hours", "before midnight",
+            "final warning", "don't miss", "dont miss",
+        ],
+    },
+]
+
+
+def detect_risk_indicators(low_text: str) -> list:
+    """Return the risk indicators matched on the lowercased claim text."""
+    hits = []
+    for spec in RISK_INDICATORS:
+        matched = [p for p in spec["patterns"] if p in low_text]
+        if matched:
+            hits.append({
+                "id": spec["id"],
+                "label": spec["label"],
+                "why": spec["why"],
+                "weight": spec["weight"],
+                "matched": matched[:3],
+            })
+    return hits
+
+
+def calculate_claim_trust_score(low_text: str, verdict: str, category: str) -> dict:
+    """Compute the deterministic trust score + risk label for a claim.
+
+    Two display bands:
+      HIGH RISK  20-30  -> verdict "False", or risk-indicator weight >= threshold
+      LOW RISK   70-90  -> otherwise (score varies with the verdict)
+
+    Returns dict: score, status, risk_level, risk_label, risk_indicators,
+    recommended_action, verification_suggestions, why.
+    """
+    indicators = detect_risk_indicators(low_text or "")
+    weighted = sum(i["weight"] for i in indicators)
+    base_score, base_status = VERDICT_SCORE.get(verdict, (78, "warning"))
+
+    if verdict == "False":
+        # A proven-false claim is always high risk; indicators only lower it
+        # further within the 20-30 band (False alone = 25).
+        score = 30 - min(max(weighted, 5), 10)
+        risk_level, risk_label = "high", "HIGH RISK"
+        why = [i["why"] for i in indicators]
+        if not why:
+            why = ["The claim is false according to the evidence in the TrustLens knowledge base."]
+    elif weighted >= RISK_INDICATOR_THRESHOLD:
+        score = 30 - min(weighted, 10)
+        risk_level, risk_label = "high", "HIGH RISK"
+        why = [i["why"] for i in indicators]
+    else:
+        score, _status = base_score, base_status
+        risk_level, risk_label = "low", "LOW RISK"
+        why = [i["why"] for i in indicators]
+        if not why:
+            why = ["No scam-risk indicators were detected in this claim."]
+
+    status = classify(score)
+
+    if risk_level == "high":
+        recommended_action = (
+            "Do not share any personal, OTP or banking details, and do not send "
+            "money. Treat the message as a likely scam, report it, and verify "
+            "through an official channel."
+        )
+    else:
+        recommended_action = (
+            "No scam indicators were detected. Treat the claim as informational - "
+            "verify it with official sources before acting on financial or medical advice."
+        )
+
+    verification_suggestions = [
+        "Contact the official bank, company or government helpline directly (not via the message).",
+        "Never share OTP, PIN, CVV or passwords with anyone, however official the message looks.",
+        "Report suspicious messages to the local cybercrime or consumer helpline.",
+    ]
+
+    return {
+        "score": score,
+        "status": status,
+        "risk_level": risk_level,
+        "risk_label": risk_label,
+        "risk_indicators": indicators,
+        "recommended_action": recommended_action,
+        "verification_suggestions": verification_suggestions,
+        "why": why,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -676,6 +861,9 @@ def scan_claim(claim: str) -> dict:
         return {
             "score": 0, "status": "dangerous", "verdict": None,
             "confidence": None, "category": "General",
+            "risk_level": None, "risk_label": None,
+            "risk_indicators": [], "recommended_action": None,
+            "verification_suggestions": [],
             "explanation": "No claim was entered.",
             "evidence": [], "sources": [], "limitations": "Nothing to analyse.",
             "caution": None, "match": None, "reasons": [
@@ -688,6 +876,9 @@ def scan_claim(claim: str) -> dict:
         return {
             "score": 0, "status": "dangerous", "verdict": None,
             "confidence": None, "category": "General",
+            "risk_level": None, "risk_label": None,
+            "risk_indicators": [], "recommended_action": None,
+            "verification_suggestions": [],
             "explanation": "The claim is too short to analyse meaningfully. "
                            "Please enter a complete statement.",
             "evidence": [], "sources": [], "limitations": "Input too short.",
@@ -793,13 +984,16 @@ def scan_claim(claim: str) -> dict:
         "financial": FINANCIAL_DISCLAIMER,
     }.get(caution)
 
+    score_info = calculate_claim_trust_score(low, verdict, category)
+    score, status = score_info["score"], score_info["status"]
+
     reasons = [{
         "severity": {"Supported": "success", "Mostly supported": "success",
                      "Misleading": "warning", "Unsupported": "warning",
                      "False": "danger", "Unverifiable": "info",
                      "Insufficient evidence": "info"}[verdict],
         "text": f"{verdict} - {category}",
-        "points": score - 50 if verdict in ("Supported", "Mostly supported", "False") else 0,
+        "points": 0,
         "detail": explanation[:300],
     }]
 
@@ -824,6 +1018,11 @@ def scan_claim(claim: str) -> dict:
         "verdict": verdict,
         "confidence": confidence,
         "category": category,
+        "risk_level": score_info["risk_level"],
+        "risk_label": score_info["risk_label"],
+        "risk_indicators": score_info["risk_indicators"],
+        "recommended_action": score_info["recommended_action"],
+        "verification_suggestions": score_info["verification_suggestions"],
         "explanation": explanation,
         "evidence": evidence,
         "sources": sources,

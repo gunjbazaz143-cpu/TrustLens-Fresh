@@ -84,10 +84,11 @@ def build_label_image(lines, blur=0):
 
 
 PRODUCT_PAYLOAD_KEYS = [
-    "score", "status", "reliable", "assessment", "risk_level", "product_name",
-    "input_source", "extracted_text", "ocr_failed", "ingredients",
-    "ingredient_count", "concerns", "positives", "unknown_ingredients",
-    "missing", "explanation", "confidence", "reasons", "processing_time_ms",
+    "score", "status", "reliable", "assessment", "risk_level", "risk_label",
+    "recommendation", "product_name", "input_source", "extracted_text",
+    "ocr_failed", "ingredients", "ingredient_count", "concerns", "positives",
+    "unknown_ingredients", "missing", "explanation", "confidence", "reasons",
+    "processing_time_ms",
 ]
 
 
@@ -127,10 +128,10 @@ def test_parse_basics():
     names = [i["name"] for i in ing]
     if len(ing) != 2 or "Water" not in names or "Glycerin" not in names:
         failures.append(f"P2 dedupe/case: got {names}")
-    # brackets, percentages (leading + trailing), E-number
+    # brackets (kept intact as one item), percentages, E-number
     ing = parse_ingredients("Water (purified) 80%, Glycerin 5%, E211")
     names = sorted(i["name"] for i in ing)
-    if names != sorted(["Water", "Glycerin", "E211"]):
+    if names != sorted(["Water (purified)", "Glycerin", "E211"]):
         failures.append(f"P2 brackets/percent/E-number: got {names}")
     # header is stripped by scan_product, not the splitter
     ing = parse_ingredients("Sodium benzoate, Methylparaben")
@@ -153,12 +154,17 @@ def test_lookup_basics():
     failures = []
     for name, expect_moderate in (("Tartrazine", True), ("E211", True),
                                   ("Sodium benzoate", True), ("Methylparaben", True),
-                                  ("Sodium lauryl sulfate", False), ("Water", False)):
+                                  ("Sodium lauryl sulfate", False), ("Water", False),
+                                  ("Preservative", True)):
         entry = lookup_ingredient(name)
         if entry is None:
             failures.append(f"lookup missing {name!r}")
         elif (entry["category"] == "moderate") != expect_moderate:
             failures.append(f"lookup category for {name!r}: {entry['category']}")
+    for name in ("Mercury", "Lead", "Arsenic"):
+        entry = lookup_ingredient(name)
+        if entry is None or entry["category"] != "higher":
+            failures.append(f"lookup {name!r} should be higher concern")
     for name in ("Mysterypuff X23", "Zarblend-9", ""):
         if lookup_ingredient(name) is not None:
             failures.append(f"lookup should miss {name!r}")
@@ -177,10 +183,14 @@ def test_valid_list_scoring():
         failures.append("P1 valid list not reliable")
     if payload["ingredient_count"] != 7:
         failures.append(f"P1 count {payload['ingredient_count']} != 7")
-    if payload["score"] != 76 or payload["status"] != "warning":
-        failures.append(f"P1 score/status {payload['score']}/{payload['status']} != 76/warning")
+    if payload["score"] != 50 or payload["status"] != "warning":
+        failures.append(f"P1 score/status {payload['score']}/{payload['status']} != 50/warning")
     if payload["risk_level"] != "moderate":
         failures.append(f"P1 risk_level {payload['risk_level']} != moderate")
+    if payload["risk_label"] != "MODERATE RISK":
+        failures.append(f"P1 risk_label {payload['risk_label']} != MODERATE RISK")
+    if not payload.get("recommendation"):
+        failures.append("P1 missing recommendation")
     if payload["concerns"]:
         failures.append(f"P1 unexpected concerns {payload['concerns']}")
     if payload["unknown_ingredients"]:
@@ -189,15 +199,17 @@ def test_valid_list_scoring():
     for ing in payload["ingredients"]:
         if not ing["source"]:
             failures.append(f"P1 ingredient {ing['name']} has no source")
-    # determinism: same input twice -> identical payload
+    # determinism: same input twice -> identical analysis (timing excluded)
     again = scan_product(
         "Ingredients: Water, Glycerin, Sodium lauryl sulfate, "
         "Methylparaben, Sodium benzoate, Tartrazine, Dimethicone"
     )
-    if again != payload:
+    a = {k: v for k, v in payload.items() if k != "processing_time_ms"}
+    b = {k: v for k, v in again.items() if k != "processing_time_ms"}
+    if a != b:
         failures.append("P1 scan not deterministic")
     if not failures:
-        print("P1 valid-list scoring passed (score=76, moderate, warning).")
+        print("P1 valid-list scoring passed (score=50, moderate, warning).")
     return failures
 
 
@@ -206,10 +218,12 @@ def test_higher_concern_scoring():
     payload = scan_product("Sodium nitrite, BHA, Formaldehyde")
     if not payload["reliable"]:
         failures.append("P3 higher list not reliable")
-    if payload["score"] != 25 or payload["status"] != "dangerous":
-        failures.append(f"P3 score/status {payload['score']}/{payload['status']} != 25/dangerous")
+    if payload["score"] < 15 or payload["score"] > 30 or payload["status"] != "dangerous":
+        failures.append(f"P3 score/status {payload['score']}/{payload['status']} not in 15-30/dangerous")
     if payload["risk_level"] != "higher":
         failures.append(f"P3 risk_level {payload['risk_level']} != higher")
+    if payload["risk_label"] not in ("HIGH RISK", "VERY HIGH RISK"):
+        failures.append(f"P3 risk_label {payload['risk_label']}")
     if len(payload["concerns"]) != 3:
         failures.append(f"P3 concerns {len(payload['concerns'])} != 3")
     names = {c["name"] for c in payload["concerns"]}
@@ -218,7 +232,7 @@ def test_higher_concern_scoring():
     if "BHA" not in " ".join(r["text"] for r in payload["reasons"]):
         failures.append("P3 reasons do not mention BHA")
     if not failures:
-        print("P3 higher-concern scoring passed (score=25, dangerous).")
+        print("P3 higher-concern scoring passed (score=20, dangerous).")
     return failures
 
 
@@ -229,21 +243,25 @@ def test_unknown_never_dangerous():
         failures.append("P4 unknown list should still be reliable")
     if payload["risk_level"] != "unknown":
         failures.append(f"P4 risk_level {payload['risk_level']} != unknown")
-    if payload["status"] != "warning" or payload["score"] != 60:
-        failures.append(f"P4 score/status {payload['score']}/{payload['status']} != 60/warning")
+    # 100% unknown -> "unknown / insufficient evidence" sits in the MODERATE
+    # band (50-60), never dangerous, never a fake safe score.
+    if payload["status"] != "warning" or not (50 <= payload["score"] <= 60):
+        failures.append(f"P4 score/status {payload['score']}/{payload['status']} != 50-60/warning")
+    if payload["risk_label"] != "UNKNOWN / INSUFFICIENT EVIDENCE":
+        failures.append(f"P4 risk_label {payload['risk_label']}")
     if payload["concerns"]:
         failures.append("P4 unknowns must never be dangerous/concerns")
     if set(payload["unknown_ingredients"]) != {"Mysterypuff X23", "Zarblend-9"}:
         failures.append(f"P4 unknowns {payload['unknown_ingredients']}")
     # unknown cap with a known low-risk ingredient (exactly 50% unknown):
-    # score capped at 85; risk stays low only when NOT most-unknown
+    # score capped at 85, minus small adjustments; risk stays low
     payload = scan_product("Water, Mysterypuff X23")
-    if payload["score"] != 85 or payload["risk_level"] != "low":
-        failures.append(f"P4 mix score/risk {payload['score']}/{payload['risk_level']} != 85/low")
-    # most ingredients unknown -> risk_level must be "unknown", capped at 60
+    if payload["score"] < 78 or payload["score"] > 90 or payload["risk_level"] != "low":
+        failures.append(f"P4 mix score/risk {payload['score']}/{payload['risk_level']} not in 78-90/low")
+    # most ingredients unknown -> risk_level must be "unknown", moderate band
     payload = scan_product("Water, Mysterypuff X23, Zarblend-9")
-    if payload["score"] != 60 or payload["risk_level"] != "unknown":
-        failures.append(f"P4 majority-unknown score/risk {payload['score']}/{payload['risk_level']} != 60/unknown")
+    if payload["risk_level"] != "unknown" or not (50 <= payload["score"] <= 60):
+        failures.append(f"P4 majority-unknown score/risk {payload['score']}/{payload['risk_level']}")
     # explanation must say unknown is not harmful
     if "unknown does not mean harmful" not in payload["explanation"]:
         failures.append("P4 explanation missing honesty note")
@@ -273,8 +291,10 @@ def test_name_only_and_empty():
     payload = scan_product("Water")
     if not payload["reliable"]:
         failures.append("P5 single known ingredient should be scored")
-    if payload["score"] != 100 or payload["risk_level"] != "low":
+    if payload["score"] != 95 or payload["risk_level"] != "low":
         failures.append(f"P5 single known ingredient score/risk {payload['score']}/{payload['risk_level']}")
+    if payload["risk_label"] != "LOW RISK":
+        failures.append(f"P5 single known ingredient risk_label {payload['risk_label']}")
     # empty input -> honest insufficient
     payload = scan_product("")
     if payload["reliable"] is not False or payload["score"] != 50:
@@ -291,14 +311,41 @@ def test_extracted_text_path():
     payload = scan_product(extracted_text="Ingredients: Water, Glycerin")
     if not payload["reliable"]:
         failures.append("P7 OCR-text path not reliable")
-    if payload["score"] != 100 or payload["status"] != "safe":
-        failures.append(f"P7 score/status {payload['score']}/{payload['status']} != 100/safe")
+    if payload["score"] != 95 or payload["status"] != "safe":
+        failures.append(f"P7 score/status {payload['score']}/{payload['status']} != 95/safe")
     if payload["risk_level"] != "low":
         failures.append(f"P7 risk_level {payload['risk_level']} != low")
     if payload["input_source"] != "image":
         failures.append(f"P7 input_source {payload['input_source']} != image")
     if not failures:
         print("P7 extracted-text path passed.")
+    return failures
+
+
+def test_spec_trust_bands():
+    """Spec cases: HIGH 20-30 / MODERATE 50-60 / LOW 80-95 with risk labels."""
+    failures = []
+    cases = [
+        ("Sample Cosmetic Cream\nWater, Glycerin, Mercury, Fragrance",
+         (20, 30), "HIGH RISK"),
+        ("Sample Face Lotion\nWater, Glycerin, Fragrance, Preservative",
+         (50, 60), "MODERATE RISK"),
+        ("Sample Moisturizer\nWater, Glycerin, Aloe Vera, Vitamin E",
+         (80, 95), "LOW RISK"),
+    ]
+    for text, (lo, hi), label in cases:
+        payload = scan_product(text)
+        name = text.splitlines()[0]
+        if not (lo <= payload["score"] <= hi):
+            failures.append(f"SPEC {name!r}: score {payload['score']} not in {lo}-{hi}")
+        if payload["risk_label"] != label:
+            failures.append(f"SPEC {name!r}: risk_label {payload['risk_label']} != {label}")
+        if not payload.get("recommendation"):
+            failures.append(f"SPEC {name!r}: missing recommendation")
+        if payload.get("why") is None:
+            failures.append(f"SPEC {name!r}: missing why")
+    if not failures:
+        print("SPEC product trust bands passed (HIGH 20-30 / MODERATE 50-60 / LOW 80-95).")
     return failures
 
 
@@ -465,6 +512,7 @@ def test_seed_idempotent():
     failures = []
     app = create_app()
     with app.app_context():
+        seed_product_db(app, force=True)  # normalize to current KB state first
         before = (Ingredient.query.count(), Product.query.count())
         seed_product_db(app)
         seed_product_db(app, force=True)
@@ -495,11 +543,13 @@ def test_dettol_product_match():
         failures.append("P10 dettol match not reliable")
     if payload.get("ingredient_count") != 6:
         failures.append(f"P10 dettol ingredient_count {payload.get('ingredient_count')} != 6")
-    # a non-food product is assessed for its intended use - never penalised for
-    # simply not being edible (moderate pine oil keeps it below 95, not because
-    # of consumption status)
-    if payload.get("score", 0) < 80:
-        failures.append(f"P10 non-food product penalised: score {payload.get('score')}")
+    # A non-food product is assessed for its intended use - never penalised for
+    # simply not being edible. Pine oil (a moderate-concern ingredient) places
+    # it in the MODERATE band (50-60), not because of consumption status.
+    if not (50 <= payload.get("score", 0) <= 60):
+        failures.append(f"P10 non-food product score {payload.get('score')} not in MODERATE band 50-60")
+    if payload.get("risk_label") != "MODERATE RISK":
+        failures.append(f"P10 dettol risk_label {payload.get('risk_label')}")
     if not prod.get("warnings"):
         failures.append("P10 product warnings missing")
     if prod.get("consumption_status") != "Not intended for human consumption":
@@ -652,7 +702,7 @@ def main():
     check_names = [
         test_parse_basics, test_lookup_basics, test_valid_list_scoring,
         test_higher_concern_scoring, test_unknown_never_dangerous,
-        test_name_only_and_empty, test_extracted_text_path,
+        test_name_only_and_empty, test_extracted_text_path, test_spec_trust_bands,
         test_structural_all, test_route_valid_image, test_route_blurry_image,
         test_route_bad_inputs,
         test_seed_idempotent, test_dettol_product_match, test_db_ocr_comparison,

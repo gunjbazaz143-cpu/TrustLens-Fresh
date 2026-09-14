@@ -12,7 +12,10 @@ from models.user import User
 from models.report import ScamReport, ScamReportReply, REPORT_STATUSES
 from models.support import ContactMessage, Feedback
 from models.admin import BlacklistedDomain, AILog
-from models.product_db import Product, Ingredient, ProductIngredient
+from models.product_db import (
+    Product, Ingredient, ProductIngredient, Category,
+    ProductIdentifier, ProductAttribute, ProductVerification, ProductScoreFactor,
+)
 from models.scan import (
     WebsiteScan, JobScan, EmailScan, WhatsAppScan, QRScan, PaymentScan,
     ProductScan, ClaimScan,
@@ -269,10 +272,14 @@ INGREDIENT_TYPES = [
     "surfactant", "preservative", "fragrance", "solvent", "disinfectant",
     "emulsifier", "humectant", "antioxidant", "coloring agent",
     "active ingredient", "flavoring agent", "sweetener", "thickening agent",
-    "stabilizer", "acidity regulator", "other",
+    "stabilizer", "acidity regulator", "oil", "emollient", "material",
+    "component", "stimulant", "seasoning", "cleaning agent", "uv_filter",
+    "pigment", "other",
 ]
 RISK_CATEGORIES = ["low", "moderate", "higher", "unknown"]
 EVIDENCE_LEVELS = ["High", "Medium", "Low"]
+INGREDIENT_DOMAINS = ["food", "cosmetic", "cleaning", "chemical", "textile", "electronics", "other"]
+VERIFICATION_STATUS_OPTIONS = ["verified", "partially_verified", "unverified", "needs_verification"]
 
 
 def _norm(text: str) -> str:
@@ -329,7 +336,7 @@ def _parse_product_ingredients(text: str) -> tuple:
 
 def _product_form_dict() -> dict:
     """Collect the Product fields from a submitted form."""
-    return {
+    fields = {
         "brand_name": (request.form.get("brand_name") or "").strip(),
         "product_name": (request.form.get("product_name") or "").strip(),
         "product_variant": (request.form.get("product_variant") or "").strip() or None,
@@ -344,7 +351,33 @@ def _product_form_dict() -> dict:
         "source": (request.form.get("source") or "").strip() or None,
         "source_url": (request.form.get("source_url") or "").strip() or None,
         "source_date": (request.form.get("source_date") or "").strip() or None,
+        # NEW fields
+        "product_type": (request.form.get("product_type") or "").strip() or None,
+        "description": (request.form.get("description") or "").strip() or None,
+        "gtin": (request.form.get("gtin") or "").strip() or None,
+        "sku": (request.form.get("sku") or "").strip() or None,
+        "model_number": (request.form.get("model_number") or "").strip() or None,
+        "product_code": (request.form.get("product_code") or "").strip() or None,
+        "country": (request.form.get("country") or "").strip() or None,
+        "edible_status": (request.form.get("edible_status") or "").strip() or None,
+        "external_use_status": request.form.get("external_use_status") == "on",
+        "verification_status": (request.form.get("verification_status") or "verified").strip(),
+        "identification_confidence": (request.form.get("identification_confidence") or "").strip() or None,
+        "category_id": None,
+        "subcategory_id": None,
     }
+    # Resolve category IDs from names
+    cat_name = fields.get("category") or ""
+    sub_name = fields.get("subcategory") or ""
+    if cat_name:
+        cat = Category.query.filter_by(category_name=cat_name).first()
+        if cat:
+            fields["category_id"] = cat.category_id
+    if sub_name:
+        sub = Category.query.filter_by(category_name=sub_name).first()
+        if sub:
+            fields["subcategory_id"] = sub.category_id
+    return fields
 
 
 def _apply_product_fields(product: Product, fields: dict) -> None:
@@ -360,6 +393,19 @@ def _generate_product_id(brand_name: str, product_name: str) -> str:
         candidate = f"{base}-{n}"
         n += 1
     return candidate
+
+
+def _get_top_level_categories():
+    """Return top-level categories for the product form dropdown."""
+    return Category.query.filter_by(parent_category_id=None).order_by(Category.sort_order).all()
+
+
+def _get_subcategories(parent_name: str):
+    """Return subcategories for a given parent category name."""
+    parent = Category.query.filter_by(category_name=parent_name).first()
+    if parent:
+        return Category.query.filter_by(parent_category_id=parent.category_id).order_by(Category.sort_order).all()
+    return []
 
 
 @admin_bp.route("/products")
@@ -414,6 +460,9 @@ def product_new():
         ingredient_types=INGREDIENT_TYPES,
         risk_categories=RISK_CATEGORIES,
         evidence_levels=EVIDENCE_LEVELS,
+        verification_statuses=VERIFICATION_STATUS_OPTIONS,
+        ingredient_domains=INGREDIENT_DOMAINS,
+        top_categories=_get_top_level_categories(),
     )
 
 
@@ -465,6 +514,9 @@ def product_edit(product_id):
         ingredient_types=INGREDIENT_TYPES,
         risk_categories=RISK_CATEGORIES,
         evidence_levels=EVIDENCE_LEVELS,
+        verification_statuses=VERIFICATION_STATUS_OPTIONS,
+        ingredient_domains=INGREDIENT_DOMAINS,
+        top_categories=_get_top_level_categories(),
     )
 
 
@@ -497,6 +549,7 @@ def ingredients():
         ingredient_types=INGREDIENT_TYPES,
         risk_categories=RISK_CATEGORIES,
         evidence_levels=EVIDENCE_LEVELS,
+        ingredient_domains=INGREDIENT_DOMAINS,
     )
 
 
@@ -517,6 +570,13 @@ def ingredient_add():
         return redirect(url_for("admin.ingredients"))
     aliases = [a.strip() for a in (request.form.get("aliases") or "").split(",") if a.strip()]
     concerns = [c.strip() for c in (request.form.get("concerns") or "").splitlines() if c.strip()]
+    score_impact = None
+    raw_impact = (request.form.get("score_impact") or "").strip()
+    if raw_impact:
+        try:
+            score_impact = float(raw_impact)
+        except ValueError:
+            pass
     ing = Ingredient(
         ingredient_id=ingredient_id,
         ingredient_name=name,
@@ -531,6 +591,8 @@ def ingredient_add():
         external_use_information=(request.form.get("external_use_information") or "").strip() or None,
         evidence_level=(request.form.get("evidence_level") or "").strip() or None,
         risk_category=(request.form.get("risk_category") or "unknown").strip(),
+        category=(request.form.get("ingredient_category") or "").strip() or None,
+        score_impact=score_impact,
         source=(request.form.get("source") or "").strip() or None,
         source_url=(request.form.get("source_url") or "").strip() or None,
         source_date=(request.form.get("source_date") or "").strip() or None,
@@ -557,3 +619,60 @@ def ingredient_delete(ingredient_id):
             db.session.commit()
             flash(f"Ingredient '{ing.ingredient_name}' deleted.", "success")
     return redirect(url_for("admin.ingredients"))
+
+
+# --------------------------------------------------------------------------- #
+# Categories administration
+# --------------------------------------------------------------------------- #
+@admin_bp.route("/categories")
+@admin_required
+def categories():
+    cats = Category.query.order_by(Category.sort_order, Category.category_name).all()
+    parent_map = {c.category_id: c.category_name for c in cats}
+    return render_template("admin/categories.html", categories=cats, parent_map=parent_map)
+
+
+@admin_bp.route("/categories/add", methods=["POST"])
+@admin_required
+def category_add():
+    name = (request.form.get("category_name") or "").strip()
+    if not name:
+        flash("Category name is required.", "danger")
+        return redirect(url_for("admin.categories"))
+    existing = Category.query.filter_by(category_name=name).first()
+    if existing:
+        flash(f"Category '{name}' already exists.", "warning")
+        return redirect(url_for("admin.categories"))
+    parent_id = request.form.get("parent_category_id")
+    parent_id = int(parent_id) if parent_id else None
+    desc = (request.form.get("description") or "").strip() or None
+    max_order = db.session.query(db.func.max(Category.sort_order)).scalar() or 0
+    cat = Category(
+        category_name=name,
+        description=desc,
+        parent_category_id=parent_id,
+        sort_order=max_order + 1,
+    )
+    db.session.add(cat)
+    db.session.commit()
+    flash(f"Category '{name}' added.", "success")
+    return redirect(url_for("admin.categories"))
+
+
+@admin_bp.route("/categories/<int:category_id>/delete", methods=["POST"])
+@admin_required
+def category_delete(category_id):
+    cat = db.session.get(Category, category_id)
+    if cat:
+        children = Category.query.filter_by(parent_category_id=category_id).count()
+        if children:
+            flash(f"Category '{cat.category_name}' has {children} subcategory(ies) and cannot be deleted.", "danger")
+        else:
+            in_use = Product.query.filter_by(category_id=category_id).count()
+            if in_use:
+                flash(f"Category '{cat.category_name}' is used by {in_use} product(s) and cannot be deleted.", "danger")
+            else:
+                db.session.delete(cat)
+                db.session.commit()
+                flash(f"Category '{cat.category_name}' deleted.", "success")
+    return redirect(url_for("admin.categories"))

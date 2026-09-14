@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Categories - Admin - TrustLens{% endblock %}
+
+{% block content %}
+<section class="scanner-shell">
+  <div class="container">
+    <div class="row g-4">
+      <div class="col-lg-3">
+        {% include "admin/_nav.html" %}
+      </div>
+      <div class="col-lg-9">
+        <h1 class="mb-4">Product Categories</h1>
+        <p class="text-muted-c mb-4">
+          Hierarchical category structure for organizing products. Parent categories
+          define broad groups (e.g. Food, Electronics); subcategories define specific
+          product types (e.g. Biscuits, Mobile Accessories).
+        </p>
+
+        <div class="glass p-4 mb-4">
+          <details>
+            <summary class="fw-bold mb-2">&#10133; Add a new category</summary>
+            <form method="post" action="{{ url_for('admin.category_add') }}" class="row g-2">
+              <div class="col-md-4">
+                <label class="form-label-c" for="category_name">Category name *</label>
+                <input type="text" class="form-control form-control-trust" id="category_name" name="category_name" required>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label-c" for="parent_category_id">Parent Category</label>
+                <select class="form-select form-control-trust" id="parent_category_id" name="parent_category_id">
+                  <option value="">None (top-level)</option>
+                  {% for cat in categories if not cat.parent_category_id %}
+                    <option value="{{ cat.category_id }}">{{ cat.category_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label-c" for="description">Description</label>
+                <input type="text" class="form-control form-control-trust" id="description" name="description" placeholder="Brief description">
+              </div>
+              <div class="col-12">
+                <button type="submit" class="btn btn-trust">Add Category</button>
+              </div>
+            </form>
+          </details>
+        </div>
+
+        <div class="glass p-4">
+          <div class="table-responsive">
+            <table class="table table-trust mb-0 align-middle">
+              <thead>
+                <tr><th>Category</th><th>Parent</th><th>Description</th><th>Sort</th><th class="text-end"></th></tr>
+              </thead>
+              <tbody>
+                {% for cat in categories %}
+                  <tr>
+                    <td>
+                      <div class="fw-bold">
+                        {% if cat.parent_category_id %}&nbsp;&nbsp;&nbsp;&nbsp;&#8627;{% endif %}
+                        {{ cat.category_name }}
+                      </div>
+                      <div class="text-dim-c small">ID: {{ cat.category_id }}</div>
+                    </td>
+                    <td class="small">{{ parent_map.get(cat.parent_category_id, '&mdash;')|safe }}</td>
+                    <td class="small">{{ cat.description or '&mdash;'|safe }}</td>
+                    <td class="small">{{ cat.sort_order }}</td>
+                    <td class="text-end">
+                      <form method="post" action="{{ url_for('admin.category_delete', category_id=cat.category_id) }}" class="d-inline"
+                            onsubmit="return confirm('Delete category {{ cat.category_name }}?');">
+                        <button type="submit" class="btn btn-danger-trust btn-sm-trust">Delete</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="5" class="text-center text-dim-c py-4">No categories yet.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

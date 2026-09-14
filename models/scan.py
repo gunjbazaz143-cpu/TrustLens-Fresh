@@ -133,6 +133,9 @@ class ProductScan(ScanMixin, db.Model):
     product_id = db.Column(db.String(40), nullable=True, index=True)
     database_match = db.Column(db.String(20), nullable=True)   # High|Medium|Low|BrandOnly|None
     consumption_status = db.Column(db.String(60), nullable=True)
+    edible_status = db.Column(db.String(20), nullable=True)    # edible|non_edible|uncertain
+    usage_purpose = db.Column(db.String(60), nullable=True)    # e.g. Food, Hair, Body
+    allergen_warnings = db.Column(db.JSON, nullable=True)       # list of allergen dicts
     category = db.Column(db.String(60), nullable=True)
     data_quality = db.Column(db.JSON, nullable=True)
     reliable = db.Column(db.Boolean, default=False)
@@ -143,6 +146,8 @@ class ProductScan(ScanMixin, db.Model):
     positives = db.Column(db.JSON, nullable=True)
     unknown_ingredients = db.Column(db.JSON, nullable=True)
     reasons = db.Column(db.JSON, nullable=True)
+    explanation = db.Column(db.Text, nullable=True)
+    trust_score_explanation = db.Column(db.Text, nullable=True)
     input_snapshot = db.Column(db.JSON, nullable=True)
 
 

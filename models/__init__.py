@@ -7,7 +7,12 @@ from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
-from models.product_db import Ingredient, Product, ProductIngredient  # noqa: E402,F401
+from models.product_db import (  # noqa: E402,F401
+    Ingredient, Product, ProductIngredient, Category,
+    ProductIdentifier, ProductImage, ProductAttribute,
+    ProductVerification, ProductScoreFactor,
+)
+from models.product_candidate import ProductCandidate  # noqa: E402,F401
 
 
 def init_admin_user(app):
